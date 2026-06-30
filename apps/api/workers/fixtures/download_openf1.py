@@ -3,9 +3,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 try:
     from trackpulse_api.openf1 import OpenF1HistoricalClient, SessionDiscoveryQuery
@@ -50,6 +53,8 @@ except Exception:  # pragma: no cover - fallback when backend package is unavail
             )
 
 
+logger = logging.getLogger(__name__)
+
 VALID_LEVELS = ("golden", "dev", "full")
 DEFAULT_HIGH_FREQUENCY_ENDPOINTS = ("location", "car_data")
 DEFAULT_ENDPOINTS = (
@@ -65,11 +70,185 @@ DEFAULT_ENDPOINTS = (
     "race_control",
 )
 
+# Low-frequency endpoints downloaded in TP-BH-0004.
+# High-frequency endpoints (location, car_data) are handled separately in TP-BH-0005.
+LOW_FREQUENCY_ENDPOINTS = (
+    "sessions",
+    "drivers",
+    "weather",
+    "laps",
+    "intervals",
+    "position",
+    "stints",
+    "pit",
+    "race_control",
+)
+
+# Mandatory endpoints: their failure stops the downloader.
+# Assumption: sessions, drivers, and laps are the minimal required set for a usable fixture.
+# All other low-frequency endpoints are optional (empty is reported but allowed).
+MANDATORY_ENDPOINTS: frozenset[str] = frozenset({"sessions", "drivers", "laps"})
+
+OPENF1_BASE_URL = "https://api.openf1.org"
+REQUEST_TIMEOUT_SECONDS = 30.0
+MAX_RETRIES = 3
+
 
 @dataclass(frozen=True)
 class SessionRef:
     session_key: int
     meeting_key: int | None
+
+
+@dataclass
+class EndpointResult:
+    endpoint: str
+    records: list[dict[str, Any]]
+    mandatory: bool
+    error: str | None = None
+
+    @property
+    def count(self) -> int:
+        return len(self.records)
+
+    @property
+    def ok(self) -> bool:
+        return self.error is None
+
+
+async def _fetch_with_retry(
+    client: httpx.AsyncClient,
+    path: str,
+    params: dict[str, Any],
+    *,
+    max_retries: int = MAX_RETRIES,
+    timeout_seconds: float = REQUEST_TIMEOUT_SECONDS,
+) -> list[dict[str, Any]]:
+    """Fetch an OpenF1 endpoint with exponential backoff on 429/5xx."""
+    last_exc: Exception | None = None
+    for attempt in range(max_retries + 1):
+        if attempt > 0:
+            wait = 2.0 ** (attempt - 1)  # 1s, 2s, 4s
+            logger.debug("Retry %d/%d for %s — waiting %.1fs", attempt, max_retries, path, wait)
+            await asyncio.sleep(wait)
+
+        try:
+            response = await client.get(path, params=params, timeout=timeout_seconds)
+
+            if response.status_code == 429 or response.status_code >= 500:
+                last_exc = httpx.HTTPStatusError(
+                    f"HTTP {response.status_code}",
+                    request=response.request,
+                    response=response,
+                )
+                logger.warning(
+                    "Retryable HTTP %d from %s (attempt %d/%d)",
+                    response.status_code,
+                    path,
+                    attempt + 1,
+                    max_retries + 1,
+                )
+                continue
+
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, list):
+                raise ValueError(f"Expected list from {path}, got {type(payload).__name__}")
+            return payload
+
+        except httpx.TimeoutException as exc:
+            last_exc = exc
+            logger.warning("Timeout fetching %s (attempt %d/%d)", path, attempt + 1, max_retries + 1)
+
+    raise RuntimeError(
+        f"Failed to fetch {path} after {max_retries + 1} attempts"
+    ) from last_exc
+
+
+async def _download_low_frequency(
+    session: SessionRef,
+    *,
+    base_url: str = OPENF1_BASE_URL,
+    http_client: httpx.AsyncClient | None = None,
+) -> list[EndpointResult]:
+    """Download all low-frequency endpoints for a discovered session."""
+    results: list[EndpointResult] = []
+
+    async def _run(client: httpx.AsyncClient) -> None:
+        for endpoint in LOW_FREQUENCY_ENDPOINTS:
+            # sessions endpoint accepts session_key as a filter;
+            # all other low-frequency endpoints use session_key directly.
+            params: dict[str, Any] = {"session_key": session.session_key}
+
+            try:
+                records = await _fetch_with_retry(client, f"/v1/{endpoint}", params)
+                results.append(
+                    EndpointResult(
+                        endpoint=endpoint,
+                        records=records,
+                        mandatory=endpoint in MANDATORY_ENDPOINTS,
+                    )
+                )
+                if records:
+                    logger.info("Downloaded %d records from /%s", len(records), endpoint)
+                else:
+                    logger.warning("Empty response from /%s (optional=%s)", endpoint, endpoint not in MANDATORY_ENDPOINTS)
+
+            except Exception as exc:  # noqa: BLE001
+                results.append(
+                    EndpointResult(
+                        endpoint=endpoint,
+                        records=[],
+                        mandatory=endpoint in MANDATORY_ENDPOINTS,
+                        error=str(exc),
+                    )
+                )
+                logger.error("Failed to download /%s: %s", endpoint, exc)
+
+    if http_client is not None:
+        await _run(http_client)
+    else:
+        async with httpx.AsyncClient(base_url=base_url) as client:
+            await _run(client)
+
+    return results
+
+
+def _write_raw_files(output_dir: Path, results: list[EndpointResult]) -> None:
+    raw_dir = output_dir / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    for result in results:
+        if result.ok:
+            dest = raw_dir / f"{result.endpoint}.json"
+            dest.write_text(json.dumps(result.records, indent=2), encoding="utf-8")
+            logger.info("Wrote %s (%d records)", dest, result.count)
+
+
+def _build_summary(
+    fixture_id: str,
+    session: SessionRef,
+    results: list[EndpointResult],
+) -> dict[str, Any]:
+    endpoint_counts: dict[str, Any] = {}
+    for result in results:
+        if result.ok:
+            endpoint_counts[result.endpoint] = result.count
+        else:
+            endpoint_counts[result.endpoint] = {"error": result.error}
+
+    return {
+        "fixture_id": fixture_id,
+        "session_key": session.session_key,
+        "meeting_key": session.meeting_key,
+        "endpoints": endpoint_counts,
+    }
+
+
+def _write_summary(output_dir: Path, summary: dict[str, Any]) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    dest = output_dir / "summary.json"
+    dest.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    logger.info("Wrote fixture summary to %s", dest)
 
 
 def _parse_drivers(raw: str) -> list[int]:
@@ -186,6 +365,7 @@ def build_dry_run_plan(args: argparse.Namespace, session: SessionRef) -> dict[st
 
 
 async def _run_async(args: argparse.Namespace) -> int:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     session = await _discover_session(args)
 
     if args.dry_run:
@@ -193,9 +373,35 @@ async def _run_async(args: argparse.Namespace) -> int:
         print(json.dumps(plan, indent=2, sort_keys=True))
         return 0
 
-    print(
-        "download execution is not implemented yet; use --dry-run to inspect the deterministic request plan"
+    output_dir = Path(args.output or _default_output(args.fixture_id, args.level))
+    logger.info(
+        "Downloading low-frequency endpoints for fixture '%s' (session_key=%d) → %s",
+        args.fixture_id,
+        session.session_key,
+        output_dir,
     )
+
+    results = await _download_low_frequency(session)
+
+    # Check mandatory endpoints first — stop if any failed.
+    failed_mandatory = [r for r in results if r.mandatory and not r.ok]
+    if failed_mandatory:
+        for r in failed_mandatory:
+            logger.error("Mandatory endpoint '%s' failed: %s", r.endpoint, r.error)
+        logger.error("Download aborted: mandatory endpoint(s) failed: %s", [r.endpoint for r in failed_mandatory])
+        return 1
+
+    # Report empty optional endpoints.
+    for r in results:
+        if r.ok and not r.mandatory and r.count == 0:
+            logger.warning("Optional endpoint '%s' returned no records.", r.endpoint)
+
+    _write_raw_files(output_dir, results)
+
+    summary = _build_summary(args.fixture_id, session, results)
+    _write_summary(output_dir, summary)
+
+    print(json.dumps(summary, indent=2))
     return 0
 
 
