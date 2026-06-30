@@ -36,3 +36,49 @@ describe('TP-FE-01 UI shell', () => {
     expect(screen.getByText('Inferred')).toBeInTheDocument();
   });
 });
+
+describe('TP-FE-02 Synthetic circuit map', () => {
+  it('renders circuit map with expected segment count', () => {
+    render(<App />);
+
+    const circuitMapSvg = screen.getByRole('img', { name: /Circuit map with 12 segments/ });
+    expect(circuitMapSvg).toBeInTheDocument();
+  });
+
+  it('displays tooltip on segment hover', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const segments = screen.getAllByRole('button').filter((btn) =>
+      btn.getAttribute('aria-label')?.includes('segment')
+    );
+
+    if (segments.length > 0) {
+      await user.hover(segments[0]);
+
+      // Tooltip should appear with segment information
+      const tooltipElements = screen.queryAllByText(/sector|Braking|straight/i);
+      expect(tooltipElements.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('applies layer class when active layer changes', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const gripButton = screen.getByRole('button', { name: 'Grip' });
+    await user.click(gripButton);
+
+    expect(screen.getByText('Active Layer: Grip')).toBeInTheDocument();
+
+    // Segments should have the grip layer class
+    const segmentElements = document.querySelectorAll('.layer-grip');
+    expect(segmentElements.length).toBeGreaterThan(0);
+  });
+
+  it('track map header displays active layer', () => {
+    render(<App />);
+
+    expect(screen.getByText('Active Layer: Track Temp')).toBeInTheDocument();
+  });
+});
