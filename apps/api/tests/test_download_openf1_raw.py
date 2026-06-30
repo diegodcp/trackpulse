@@ -11,13 +11,17 @@ import pytest
 
 from workers.fixtures import download_openf1
 from workers.fixtures.download_openf1 import (
+    DriverEndpointResult,
     EndpointResult,
     LOW_FREQUENCY_ENDPOINTS,
     MANDATORY_ENDPOINTS,
     SessionRef,
     _build_summary,
+    _decimate_timestamped_records,
+    _download_high_frequency,
     _download_low_frequency,
     _fetch_with_retry,
+    _write_driver_raw_files,
     _write_raw_files,
     _write_summary,
 )
@@ -264,6 +268,130 @@ def test_build_summary_lists_counts() -> None:
     assert "error" in summary["endpoints"]["intervals"]
 
 
+def test_build_summary_includes_driver_high_frequency_counts() -> None:
+    results = [
+        EndpointResult("sessions", [{"session_key": 9149}], mandatory=True),
+    ]
+    driver_results = [
+        DriverEndpointResult(
+            endpoint="location",
+            driver_number=1,
+            records_before=[{"date": "2023-03-05T15:00:00Z"}, {"date": "2023-03-05T15:00:00.400Z"}],
+            records_after=[{"date": "2023-03-05T15:00:00Z"}],
+        ),
+        DriverEndpointResult(
+            endpoint="car_data",
+            driver_number=1,
+            records_before=[],
+            records_after=[],
+            error="timeout",
+        ),
+    ]
+
+    summary = _build_summary("bahrain-2023-race", SAMPLE_SESSION_REF, results, driver_results)
+
+    assert summary["high_frequency"]["drivers"]["1"]["location"] == {"before": 2, "after": 1}
+    assert "error" in summary["high_frequency"]["drivers"]["1"]["car_data"]
+
+
+# ---------------------------------------------------------------------------
+# High-frequency decimation and download
+# ---------------------------------------------------------------------------
+
+def test_decimate_timestamped_records_is_deterministic_and_1hz() -> None:
+    records = [
+        {"date": "2023-03-05T15:00:00.900Z", "value": "late"},
+        {"date": "2023-03-05T15:00:00.100Z", "value": "early"},
+        {"date": "2023-03-05T15:00:01.100Z", "value": "next-second"},
+        {"date": "2023-03-05T15:00:01.900Z", "value": "drop"},
+    ]
+
+    first = _decimate_timestamped_records(records, sample_rate_hz=1)
+    second = _decimate_timestamped_records(records, sample_rate_hz=1)
+
+    assert first == second
+    assert [row["value"] for row in first] == ["early", "next-second"]
+
+
+@pytest.mark.asyncio
+async def test_download_high_frequency_decimates_for_dev_level() -> None:
+    responses = {
+        "/v1/location": [
+            {"date": "2023-03-05T15:00:00.000Z", "x": 1},
+            {"date": "2023-03-05T15:00:00.500Z", "x": 2},
+            {"date": "2023-03-05T15:00:01.000Z", "x": 3},
+        ],
+        "/v1/car_data": [
+            {"date": "2023-03-05T15:00:00.010Z", "speed": 300},
+            {"date": "2023-03-05T15:00:00.910Z", "speed": 302},
+        ],
+    }
+    mock_client = _make_async_client(responses)
+
+    results = await _download_high_frequency(
+        SAMPLE_SESSION_REF,
+        [1],
+        level="dev",
+        http_client=mock_client,
+    )
+
+    location = next(r for r in results if r.endpoint == "location")
+    car_data = next(r for r in results if r.endpoint == "car_data")
+
+    assert location.count_before == 3
+    assert location.count_after == 2
+    assert car_data.count_before == 2
+    assert car_data.count_after == 1
+
+
+@pytest.mark.asyncio
+async def test_download_high_frequency_preserves_full_level() -> None:
+    responses = {
+        "/v1/location": [
+            {"date": "2023-03-05T15:00:00.000Z"},
+            {"date": "2023-03-05T15:00:00.200Z"},
+        ],
+        "/v1/car_data": [
+            {"date": "2023-03-05T15:00:00.300Z"},
+            {"date": "2023-03-05T15:00:00.700Z"},
+        ],
+    }
+    mock_client = _make_async_client(responses)
+
+    results = await _download_high_frequency(
+        SAMPLE_SESSION_REF,
+        [1],
+        level="full",
+        http_client=mock_client,
+    )
+
+    for result in results:
+        assert result.count_after == result.count_before
+
+
+def test_write_driver_raw_files_creates_driver_scoped_files(tmp_path: Path) -> None:
+    driver_results = [
+        DriverEndpointResult(
+            endpoint="location",
+            driver_number=1,
+            records_before=[{"date": "2023-03-05T15:00:00Z"}],
+            records_after=[{"date": "2023-03-05T15:00:00Z"}],
+        ),
+        DriverEndpointResult(
+            endpoint="car_data",
+            driver_number=1,
+            records_before=[],
+            records_after=[],
+            error="timeout",
+        ),
+    ]
+
+    _write_driver_raw_files(tmp_path, driver_results)
+
+    assert (tmp_path / "raw" / "location.driver_1.json").exists()
+    assert not (tmp_path / "raw" / "car_data.driver_1.json").exists()
+
+
 # ---------------------------------------------------------------------------
 # _write_raw_files / _write_summary
 # ---------------------------------------------------------------------------
@@ -352,6 +480,154 @@ async def test_run_async_returns_1_when_mandatory_endpoint_fails(
     exit_code = await download_openf1._run_async(args)
 
     assert exit_code == 1
+
+
+@pytest.mark.asyncio
+async def test_run_async_continues_when_some_drivers_fail(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    async def fake_discover_session(_args: object) -> SessionRef:
+        return SAMPLE_SESSION_REF
+
+    async def fake_download_low_frequency(
+        _session: SessionRef,
+        *,
+        base_url: str = "",
+        http_client: Any = None,
+    ) -> list[EndpointResult]:
+        return [
+            EndpointResult("sessions", [{"session_key": 9149}], mandatory=True),
+            EndpointResult("drivers", [{"driver_number": 1}], mandatory=True),
+            EndpointResult("laps", [{"lap_number": 1}], mandatory=True),
+        ]
+
+    async def fake_download_high_frequency(
+        _session: SessionRef,
+        _drivers: list[int],
+        *,
+        level: str,
+        base_url: str = "",
+        sample_rate_hz: int = 1,
+        http_client: Any = None,
+    ) -> list[DriverEndpointResult]:
+        return [
+            DriverEndpointResult(
+                endpoint="location",
+                driver_number=1,
+                records_before=[{"date": "2023-03-05T15:00:00Z"}],
+                records_after=[{"date": "2023-03-05T15:00:00Z"}],
+            ),
+            DriverEndpointResult(
+                endpoint="car_data",
+                driver_number=1,
+                records_before=[{"date": "2023-03-05T15:00:00Z"}],
+                records_after=[{"date": "2023-03-05T15:00:00Z"}],
+            ),
+            DriverEndpointResult(
+                endpoint="location",
+                driver_number=11,
+                records_before=[],
+                records_after=[],
+                error="network error",
+            ),
+            DriverEndpointResult(
+                endpoint="car_data",
+                driver_number=11,
+                records_before=[],
+                records_after=[],
+                error="network error",
+            ),
+        ]
+
+    monkeypatch.setattr(download_openf1, "_discover_session", fake_discover_session)
+    monkeypatch.setattr(download_openf1, "_download_low_frequency", fake_download_low_frequency)
+    monkeypatch.setattr(download_openf1, "_download_high_frequency", fake_download_high_frequency)
+
+    args = download_openf1.build_parser().parse_args(
+        [
+            "--fixture-id", "bahrain-2023-race",
+            "--year", "2023",
+            "--country-name", "Bahrain",
+            "--session-name", "Race",
+            "--drivers", "1,11",
+            "--output", str(tmp_path),
+        ]
+    )
+
+    exit_code = await download_openf1._run_async(args)
+
+    assert exit_code == 0
+    summary = json.loads((tmp_path / "summary.json").read_text())
+    assert summary["high_frequency"]["drivers"]["1"]["location"] == {"before": 1, "after": 1}
+    assert "error" in summary["high_frequency"]["drivers"]["11"]["location"]
+
+
+@pytest.mark.asyncio
+async def test_run_async_returns_1_when_all_selected_drivers_fail(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    async def fake_discover_session(_args: object) -> SessionRef:
+        return SAMPLE_SESSION_REF
+
+    async def fake_download_low_frequency(
+        _session: SessionRef,
+        *,
+        base_url: str = "",
+        http_client: Any = None,
+    ) -> list[EndpointResult]:
+        return [
+            EndpointResult("sessions", [{"session_key": 9149}], mandatory=True),
+            EndpointResult("drivers", [{"driver_number": 1}], mandatory=True),
+            EndpointResult("laps", [{"lap_number": 1}], mandatory=True),
+        ]
+
+    async def fake_download_high_frequency(
+        _session: SessionRef,
+        _drivers: list[int],
+        *,
+        level: str,
+        base_url: str = "",
+        sample_rate_hz: int = 1,
+        http_client: Any = None,
+    ) -> list[DriverEndpointResult]:
+        return [
+            DriverEndpointResult(
+                endpoint="location",
+                driver_number=1,
+                records_before=[],
+                records_after=[],
+                error="network error",
+            ),
+            DriverEndpointResult(
+                endpoint="car_data",
+                driver_number=1,
+                records_before=[],
+                records_after=[],
+                error="network error",
+            ),
+        ]
+
+    monkeypatch.setattr(download_openf1, "_discover_session", fake_discover_session)
+    monkeypatch.setattr(download_openf1, "_download_low_frequency", fake_download_low_frequency)
+    monkeypatch.setattr(download_openf1, "_download_high_frequency", fake_download_high_frequency)
+
+    args = download_openf1.build_parser().parse_args(
+        [
+            "--fixture-id", "bahrain-2023-race",
+            "--year", "2023",
+            "--country-name", "Bahrain",
+            "--session-name", "Race",
+            "--drivers", "1",
+            "--output", str(tmp_path),
+        ]
+    )
+
+    exit_code = await download_openf1._run_async(args)
+
+    assert exit_code == 1
+    assert not (tmp_path / "summary.json").exists()
 
 
 # ---------------------------------------------------------------------------

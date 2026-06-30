@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -92,6 +93,7 @@ MANDATORY_ENDPOINTS: frozenset[str] = frozenset({"sessions", "drivers", "laps"})
 OPENF1_BASE_URL = "https://api.openf1.org"
 REQUEST_TIMEOUT_SECONDS = 30.0
 MAX_RETRIES = 3
+DEFAULT_DECIMATION_SAMPLE_RATE_HZ = 1
 
 
 @dataclass(frozen=True)
@@ -110,6 +112,27 @@ class EndpointResult:
     @property
     def count(self) -> int:
         return len(self.records)
+
+    @property
+    def ok(self) -> bool:
+        return self.error is None
+
+
+@dataclass
+class DriverEndpointResult:
+    endpoint: str
+    driver_number: int
+    records_before: list[dict[str, Any]]
+    records_after: list[dict[str, Any]]
+    error: str | None = None
+
+    @property
+    def count_before(self) -> int:
+        return len(self.records_before)
+
+    @property
+    def count_after(self) -> int:
+        return len(self.records_after)
 
     @property
     def ok(self) -> bool:
@@ -214,6 +237,138 @@ async def _download_low_frequency(
     return results
 
 
+def _parse_openf1_timestamp(value: Any) -> float | None:
+    """Parse OpenF1 ISO date values to epoch seconds."""
+    if not isinstance(value, str) or not value:
+        return None
+
+    normalized = value.replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp()
+
+
+def _decimate_timestamped_records(
+    records: list[dict[str, Any]],
+    *,
+    sample_rate_hz: int,
+) -> list[dict[str, Any]]:
+    """Deterministically down-sample records by timestamp bucket."""
+    if sample_rate_hz <= 0:
+        raise ValueError("sample_rate_hz must be greater than 0")
+
+    if len(records) <= 1:
+        return list(records)
+
+    sorted_rows: list[tuple[float, int, dict[str, Any]]] = []
+    unparsable: list[tuple[int, dict[str, Any]]] = []
+
+    for idx, record in enumerate(records):
+        ts = _parse_openf1_timestamp(record.get("date"))
+        if ts is None:
+            unparsable.append((idx, record))
+            continue
+        sorted_rows.append((ts, idx, record))
+
+    # Keep ordering deterministic even if source payload order varies.
+    sorted_rows.sort(key=lambda row: (row[0], row[1]))
+
+    selected: list[tuple[float, int, dict[str, Any]]] = []
+    seen_buckets: set[int] = set()
+    for ts, idx, record in sorted_rows:
+        bucket = int(ts * sample_rate_hz)
+        if bucket in seen_buckets:
+            continue
+        seen_buckets.add(bucket)
+        selected.append((ts, idx, record))
+
+    # Append unparsable rows in original order instead of dropping unknown data.
+    selected.extend((float("inf"), idx, record) for idx, record in unparsable)
+    selected.sort(key=lambda row: (row[0], row[1]))
+    return [row[2] for row in selected]
+
+
+async def _download_high_frequency(
+    session: SessionRef,
+    drivers: list[int],
+    *,
+    level: str,
+    base_url: str = OPENF1_BASE_URL,
+    sample_rate_hz: int = DEFAULT_DECIMATION_SAMPLE_RATE_HZ,
+    http_client: httpx.AsyncClient | None = None,
+) -> list[DriverEndpointResult]:
+    """Download and optionally decimate location/car_data for each selected driver."""
+    results: list[DriverEndpointResult] = []
+    should_decimate = level in {"golden", "dev"}
+
+    async def _run(client: httpx.AsyncClient) -> None:
+        for driver_number in drivers:
+            for endpoint in DEFAULT_HIGH_FREQUENCY_ENDPOINTS:
+                params = {
+                    "session_key": session.session_key,
+                    "driver_number": driver_number,
+                }
+                try:
+                    records_before = await _fetch_with_retry(client, f"/v1/{endpoint}", params)
+                    records_after = (
+                        _decimate_timestamped_records(records_before, sample_rate_hz=sample_rate_hz)
+                        if should_decimate
+                        else list(records_before)
+                    )
+                    results.append(
+                        DriverEndpointResult(
+                            endpoint=endpoint,
+                            driver_number=driver_number,
+                            records_before=records_before,
+                            records_after=records_after,
+                        )
+                    )
+                    if not records_before:
+                        logger.warning(
+                            "No %s records for driver %d in session %d",
+                            endpoint,
+                            driver_number,
+                            session.session_key,
+                        )
+                    else:
+                        logger.info(
+                            "Downloaded %d %s records for driver %d (%d after decimation)",
+                            len(records_before),
+                            endpoint,
+                            driver_number,
+                            len(records_after),
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    results.append(
+                        DriverEndpointResult(
+                            endpoint=endpoint,
+                            driver_number=driver_number,
+                            records_before=[],
+                            records_after=[],
+                            error=str(exc),
+                        )
+                    )
+                    logger.error(
+                        "Failed to download /%s for driver %d: %s",
+                        endpoint,
+                        driver_number,
+                        exc,
+                    )
+
+    if http_client is not None:
+        await _run(http_client)
+    else:
+        async with httpx.AsyncClient(base_url=base_url) as client:
+            await _run(client)
+
+    return results
+
+
 def _write_raw_files(output_dir: Path, results: list[EndpointResult]) -> None:
     raw_dir = output_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
@@ -224,10 +379,22 @@ def _write_raw_files(output_dir: Path, results: list[EndpointResult]) -> None:
             logger.info("Wrote %s (%d records)", dest, result.count)
 
 
+def _write_driver_raw_files(output_dir: Path, driver_results: list[DriverEndpointResult]) -> None:
+    raw_dir = output_dir / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    for result in driver_results:
+        if not result.ok:
+            continue
+        dest = raw_dir / f"{result.endpoint}.driver_{result.driver_number}.json"
+        dest.write_text(json.dumps(result.records_after, indent=2), encoding="utf-8")
+        logger.info("Wrote %s (%d records)", dest, result.count_after)
+
+
 def _build_summary(
     fixture_id: str,
     session: SessionRef,
     results: list[EndpointResult],
+    driver_results: list[DriverEndpointResult] | None = None,
 ) -> dict[str, Any]:
     endpoint_counts: dict[str, Any] = {}
     for result in results:
@@ -236,12 +403,32 @@ def _build_summary(
         else:
             endpoint_counts[result.endpoint] = {"error": result.error}
 
-    return {
+    summary: dict[str, Any] = {
         "fixture_id": fixture_id,
         "session_key": session.session_key,
         "meeting_key": session.meeting_key,
         "endpoints": endpoint_counts,
     }
+
+    if driver_results:
+        per_driver: dict[str, dict[str, Any]] = {}
+        for result in driver_results:
+            driver_key = str(result.driver_number)
+            driver_entry = per_driver.setdefault(driver_key, {})
+            if result.ok:
+                driver_entry[result.endpoint] = {
+                    "before": result.count_before,
+                    "after": result.count_after,
+                }
+            else:
+                driver_entry[result.endpoint] = {
+                    "error": result.error,
+                }
+        summary["high_frequency"] = {
+            "drivers": per_driver,
+        }
+
+    return summary
 
 
 def _write_summary(output_dir: Path, summary: dict[str, Any]) -> None:
@@ -398,7 +585,48 @@ async def _run_async(args: argparse.Namespace) -> int:
 
     _write_raw_files(output_dir, results)
 
-    summary = _build_summary(args.fixture_id, session, results)
+    driver_results: list[DriverEndpointResult] = []
+    if args.drivers:
+        logger.info(
+            "Downloading high-frequency endpoints for drivers %s at level '%s'",
+            args.drivers,
+            args.level,
+        )
+        driver_results = await _download_high_frequency(
+            session,
+            args.drivers,
+            level=args.level,
+        )
+
+        # Driver-level failures are tolerated unless all selected drivers fail.
+        failed_drivers: set[int] = set()
+        successful_drivers: set[int] = set()
+        by_driver: dict[int, list[DriverEndpointResult]] = {}
+        for result in driver_results:
+            by_driver.setdefault(result.driver_number, []).append(result)
+
+        for driver, entries in by_driver.items():
+            if entries and all(not entry.ok for entry in entries):
+                failed_drivers.add(driver)
+            else:
+                successful_drivers.add(driver)
+
+        if failed_drivers and not successful_drivers:
+            logger.error(
+                "Download aborted: all selected drivers failed in high-frequency download: %s",
+                sorted(failed_drivers),
+            )
+            return 1
+
+        if failed_drivers:
+            logger.warning(
+                "High-frequency download failed for drivers %s, continuing with successful drivers.",
+                sorted(failed_drivers),
+            )
+
+        _write_driver_raw_files(output_dir, driver_results)
+
+    summary = _build_summary(args.fixture_id, session, results, driver_results)
     _write_summary(output_dir, summary)
 
     print(json.dumps(summary, indent=2))
