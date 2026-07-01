@@ -1,8 +1,9 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { delay, http, HttpResponse } from 'msw';
+import { describe, expect, it } from 'vitest';
 import { App } from './App';
-import { server, weatherFixture } from './test/server';
+import { server, trackSnapshotFixture } from './test/server';
 
 describe('TP-FE-01 UI shell', () => {
   it('renders app shell elements', () => {
@@ -104,39 +105,64 @@ describe('TP-BH-0012 Bahrain circuit map', () => {
   });
 });
 
-describe('TP-FE-03 Weather banner connection', () => {
-  it('renders measured weather values from MSW fixture', async () => {
+describe('TP-BH-0013 Track snapshot connection', () => {
+  it('renders measured weather values from track snapshot fixture', async () => {
     render(<App />);
 
-    expect(await screen.findByText(`${weatherFixture.track_temperature.toFixed(1)} C`)).toBeInTheDocument();
-    expect(screen.getByText(`${weatherFixture.air_temperature.toFixed(1)} C`)).toBeInTheDocument();
     expect(
-      screen.getByText(`${weatherFixture.wind_speed.toFixed(1)} m/s @ ${weatherFixture.wind_direction} deg`)
+      await screen.findAllByText(`${trackSnapshotFixture.snapshot.weather.track_temperature_c.toFixed(1)} C`)
+    ).toHaveLength(2);
+    expect(screen.getByText(`${trackSnapshotFixture.snapshot.weather.air_temperature_c.toFixed(1)} C`)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        `${trackSnapshotFixture.snapshot.weather.wind_speed_ms.toFixed(1)} m/s @ ${trackSnapshotFixture.snapshot.weather.wind_direction_deg} deg`
+      )
     ).toBeInTheDocument();
     expect(screen.getByText('No rain detected')).toBeInTheDocument();
     const statusSection = screen.getByRole('region', { name: 'Session status' });
-    expect(within(statusSection).getByText('Measured')).toBeInTheDocument();
+    expect(within(statusSection).getByText('measured')).toBeInTheDocument();
+    expect(within(statusSection).getByText('connected')).toBeInTheDocument();
+    expect(within(statusSection).getByText('paused')).toBeInTheDocument();
   });
 
-  it('shows safe error state when payload is invalid', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      json: async () => ({ track_temperature: 'not-a-number' })
-    });
+  it('shows loading state while waiting for track snapshot', async () => {
+    server.use(
+      http.get('/api/v1/track-state/latest', async () => {
+        await delay(200);
+        return HttpResponse.json(trackSnapshotFixture);
+      })
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText('Loading measured weather...')).toBeInTheDocument();
+  });
+
+  it('shows safe error state when track snapshot request fails', async () => {
+    server.use(
+      http.get('/api/v1/track-state/latest', () => HttpResponse.json({ detail: 'boom' }, { status: 500 }))
+    );
 
     render(<App />);
 
     expect(
-      await screen.findByText('Measured weather unavailable. Please try again shortly.')
+      await screen.findByText('Track snapshot unavailable. Please try again shortly.')
     ).toBeInTheDocument();
-
-    fetchSpy.mockRestore();
   });
 
-  it('app-level flow shows track temperature', async () => {
+  it('shows empty state when track snapshot payload is missing snapshot', async () => {
+    server.use(http.get('/api/v1/track-state/latest', () => HttpResponse.json({})));
+
     render(<App />);
 
-    expect(await screen.findByText('43.2 C')).toBeInTheDocument();
+    expect(await screen.findByText('No track snapshot available.')).toBeInTheDocument();
+  });
+
+  it('app-level flow shows global track temperature badge', async () => {
+    render(<App />);
+
+    expect(await screen.findAllByText('43.2 C')).toHaveLength(2);
+    expect(screen.getByText('Track Temp Badge')).toBeInTheDocument();
   });
 
   it('shows fixture replay controls and map marker', async () => {

@@ -9,6 +9,29 @@ export const weatherFixture = {
   rainfall: false
 };
 
+export const trackSnapshotFixture = {
+  snapshot: {
+    fixture_id: 'bahrain-2023-race',
+    replay_time: '2023-03-05T15:00:00+00:00',
+    session_key: 9149,
+    weather: {
+      available: true,
+      track_temperature_c: 43.2,
+      air_temperature_c: 29.1,
+      humidity: 32,
+      pressure: 1012,
+      rainfall: false,
+      wind_direction_deg: 310,
+      wind_speed_ms: 2.7,
+      truth_label: 'measured'
+    },
+    car_markers: [],
+    segment_states: [],
+    connection_status: 'connected',
+    replay_status: 'paused'
+  }
+};
+
 export const replayStateFixture = {
   fixture_id: 'bahrain-2023-race',
   status: 'paused',
@@ -46,12 +69,8 @@ export const replayStateFixture = {
 };
 
 export const server = setupServer(
-  http.get('/api/v1/openf1/weather/latest', () =>
-    HttpResponse.json({
-      data: weatherFixture,
-      meta: { request_id: 'test-request-id' }
-    })
-  ),
+  http.get('/api/v1/openf1/weather/latest', () => HttpResponse.json({ data: weatherFixture })),
+  http.get('/api/v1/track-state/latest', () => HttpResponse.json(trackSnapshotFixture)),
   http.get('/api/v1/replay/fixtures', () =>
     HttpResponse.json({
       fixtures: [

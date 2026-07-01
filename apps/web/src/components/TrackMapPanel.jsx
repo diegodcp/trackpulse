@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CircuitMap } from './CircuitMap';
 import bahrainCircuit from '../fixtures/bahrainCircuit';
-import { useLatestWeatherQuery } from '../data/weatherLatest';
+import { useTrackSnapshot } from '../data/trackSnapshot';
 import {
   fetchReplayFixtures,
   fetchReplayState,
@@ -57,7 +57,7 @@ export function TrackMapPanel({ activeLayer }) {
   const [selectedSpeed, setSelectedSpeed] = useState(1);
   const [scrubberCursor, setScrubberCursor] = useState(null);
   const [replayError, setReplayError] = useState('');
-  const weatherQuery = useLatestWeatherQuery();
+  const snapshotQuery = useTrackSnapshot();
 
   useEffect(() => {
     setCircuit(bahrainCircuit);
@@ -235,8 +235,8 @@ export function TrackMapPanel({ activeLayer }) {
       <CircuitMap
         circuit={circuit}
         activeLayer={activeLayer}
-        windDirectionDeg={weatherQuery.data?.wind_direction ?? null}
-        windSpeedMs={weatherQuery.data?.wind_speed ?? null}
+        windDirectionDeg={snapshotQuery.data?.weather?.wind_direction_deg ?? null}
+        windSpeedMs={snapshotQuery.data?.weather?.wind_speed_ms ?? null}
         carMarkers={replayMarker}
       />
     </section>
