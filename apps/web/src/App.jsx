@@ -5,7 +5,7 @@ import { InsightPanel } from './components/InsightPanel';
 import { LayerToggleBar } from './components/LayerToggleBar';
 import { SessionStatusBar } from './components/SessionStatusBar';
 import { TrackMapPanel } from './components/TrackMapPanel';
-import { mockInsights } from './data/mockInsights';
+import { useLiveInsights } from './data/liveInsights';
 
 const LAYERS = [
   'Track Temp',
@@ -19,21 +19,29 @@ const LAYERS = [
   'Cars'
 ];
 
-export function App() {
+function AppContent() {
   const [activeLayer, setActiveLayer] = useState(LAYERS[0]);
+  const liveInsightsQuery = useLiveInsights();
+
+  return (
+    <AppShell statusSlot={<SessionStatusBar />}>
+      <TrackMapPanel activeLayer={activeLayer} />
+      <LayerToggleBar
+        layers={LAYERS}
+        activeLayer={activeLayer}
+        onLayerChange={setActiveLayer}
+      />
+      <InsightPanel query={liveInsightsQuery} />
+    </AppShell>
+  );
+}
+
+export function App() {
   const [queryClient] = useState(() => new QueryClient());
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AppShell statusSlot={<SessionStatusBar />}>
-        <TrackMapPanel activeLayer={activeLayer} />
-        <LayerToggleBar
-          layers={LAYERS}
-          activeLayer={activeLayer}
-          onLayerChange={setActiveLayer}
-        />
-        <InsightPanel insights={mockInsights} />
-      </AppShell>
+      <AppContent />
     </QueryClientProvider>
   );
 }

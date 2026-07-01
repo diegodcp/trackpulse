@@ -36,9 +36,40 @@ export const trackSnapshotFixture = {
       }
     ],
     segment_states: [],
+    live_insights: [
+      {
+        insight_id: 'li-traffic-s2',
+        severity: 'warning',
+        title: 'Traffic cluster persists',
+        message: 'Cars are continuing to bunch through bh-s08, so pace there could stay compromised.',
+        confidence: 0.84,
+        truth_labels: ['derived'],
+        evidence: {
+          traffic_score: { value: 72.1, truth_label: 'derived' },
+          consecutive_updates: { value: 3, truth_label: 'derived' }
+        }
+      }
+    ],
     connection_status: 'connected',
     replay_status: 'paused'
   }
+};
+
+export const latestInsightsFixture = {
+  insights: [
+    {
+      insight_id: 'li-wind-s01',
+      severity: 'warning',
+      title: 'Strong wind at corner entry',
+      message: 'Strong headwind could affect the braking zone around bh-s01.',
+      confidence: 0.84,
+      truth_labels: ['measured', 'derived'],
+      evidence: {
+        wind_speed_ms: { value: 8.6, truth_label: 'measured' },
+        wind_class: { value: 'headwind', truth_label: 'derived' }
+      }
+    }
+  ]
 };
 
 export const replayStateFixture = {
@@ -79,6 +110,7 @@ export const replayStateFixture = {
 
 export const server = setupServer(
   http.get('/api/v1/openf1/weather/latest', () => HttpResponse.json({ data: weatherFixture })),
+  http.get('/api/v1/insights/latest', () => HttpResponse.json(latestInsightsFixture)),
   http.get('/api/v1/track-state/latest', () => HttpResponse.json(trackSnapshotFixture)),
   http.get('/api/v1/replay/fixtures', () =>
     HttpResponse.json({

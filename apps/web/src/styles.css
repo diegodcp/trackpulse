@@ -285,6 +285,12 @@ main {
   margin: 0.55rem 0 0;
 }
 
+.insight-panel-state {
+  margin: 0.4rem 0 0.8rem;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+}
+
 .insight-card-header {
   display: flex;
   align-items: center;
@@ -295,6 +301,43 @@ main {
 .insight-meta {
   font-weight: 700;
   color: #d6e2f2;
+}
+
+.insight-severity {
+  border-radius: 999px;
+  padding: 0.18rem 0.52rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-weight: 700;
+  color: #f3f8ff;
+  background: #40546a;
+}
+
+.insight-severity-warning {
+  background: #8a4b20;
+}
+
+.insight-severity-info {
+  background: #2b5376;
+}
+
+.insight-truth-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.insight-evidence {
+  margin: 0.55rem 0 0;
+  padding-left: 1rem;
+  color: #c5d3e4;
+  font-size: 0.88rem;
+}
+
+.insight-evidence li + li {
+  margin-top: 0.22rem;
 }
 
 .truth-label {

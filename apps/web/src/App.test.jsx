@@ -31,11 +31,22 @@ describe('TP-FE-01 UI shell', () => {
     expect(screen.getByText('Active Layer: Grip')).toBeInTheDocument();
   });
 
-  it('shows confidence and truth label in an insight card', () => {
+  it('shows confidence and truth labels in an insight card', async () => {
     render(<App />);
 
+    expect(await screen.findByText('Strong wind at corner entry')).toBeInTheDocument();
     expect(screen.getByText('Confidence: 84%')).toBeInTheDocument();
-    expect(screen.getByText('Inferred')).toBeInTheDocument();
+    expect(screen.getByText('Measured')).toBeInTheDocument();
+    expect(screen.getByText('Derived')).toBeInTheDocument();
+    expect(screen.getByText(/wind speed ms:/i)).toBeInTheDocument();
+  });
+
+  it('shows empty insight panel state when no insights are available', async () => {
+    server.use(http.get('/api/v1/insights/latest', () => HttpResponse.json({ insights: [] })));
+
+    render(<App />);
+
+    expect(await screen.findByText('No active insights right now. Start replay to populate this panel.')).toBeInTheDocument();
   });
 });
 
