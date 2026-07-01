@@ -25,7 +25,16 @@ export const trackSnapshotFixture = {
       wind_speed_ms: 2.7,
       truth_label: 'measured'
     },
-    car_markers: [],
+    car_markers: [
+      {
+        driver_number: 1,
+        x: 10,
+        y: 20,
+        truth_label: 'measured',
+        location_label: 'approximate',
+        occurred_at: '2023-03-05T15:00:00+00:00'
+      }
+    ],
     segment_states: [],
     connection_status: 'connected',
     replay_status: 'paused'

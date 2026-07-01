@@ -175,6 +175,7 @@ describe('TP-BH-0013 Track snapshot connection', () => {
     expect(screen.getByRole('button', { name: '10x' })).toBeInTheDocument();
     expect(screen.getByTestId('replay-scrubber')).toBeInTheDocument();
     expect(screen.getByTestId('replay-time')).toBeInTheDocument();
-    expect(screen.getByTestId('replay-car-marker')).toBeInTheDocument();
+    expect(screen.getByText('Car markers use measured replay locations but are displayed as approximate positions.')).toBeInTheDocument();
+    expect(await screen.findByTestId('replay-car-marker')).toBeInTheDocument();
   });
 });

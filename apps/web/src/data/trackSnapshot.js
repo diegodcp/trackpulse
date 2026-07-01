@@ -13,12 +13,25 @@ const weatherSchema = z.object({
   truth_label: z.literal('measured')
 });
 
+const carMarkerSchema = z
+  .object({
+    driver_number: z.coerce.number().int(),
+    x: z.coerce.number().nullable().optional(),
+    y: z.coerce.number().nullable().optional(),
+    z: z.coerce.number().nullable().optional(),
+    occurred_at: z.string().nullable().optional(),
+    truth_label: z.literal('measured').optional(),
+    location_label: z.literal('approximate').optional(),
+    normalized_progress: z.coerce.number().min(0).max(1).nullable().optional()
+  })
+  .passthrough();
+
 const snapshotSchema = z.object({
   fixture_id: z.string().nullable(),
   replay_time: z.string().nullable(),
   session_key: z.number().nullable(),
   weather: weatherSchema,
-  car_markers: z.array(z.unknown()),
+  car_markers: z.array(carMarkerSchema),
   segment_states: z.array(z.unknown()),
   connection_status: z.string(),
   replay_status: z.string()

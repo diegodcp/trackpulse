@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { CarMarkerLayer } from './CarMarkerLayer';
 import '../styles/circuit-map.css';
 
 function normalizeAngleDeg(angleDeg) {
@@ -179,24 +180,7 @@ export function CircuitMap({
           </g>
         )}
 
-        {/* Replay car markers (measured location projected to map space) */}
-        {carMarkers.length > 0 && (
-          <g className="replay-car-markers" aria-label="Replay car markers">
-            {carMarkers.map((marker) => (
-              <g
-                key={marker.id}
-                transform={`translate(${marker.x}, ${marker.y})`}
-                data-testid={marker.testId ?? undefined}
-              >
-                <circle r="7" className="replay-car-marker-ping" />
-                <circle r="4" className="replay-car-marker-core" />
-                <text y="-10" textAnchor="middle" className="replay-car-marker-label">
-                  {marker.label}
-                </text>
-              </g>
-            ))}
-          </g>
-        )}
+        <CarMarkerLayer markers={carMarkers} />
 
         {/* Tooltip */}
         {hoveredSegment && (

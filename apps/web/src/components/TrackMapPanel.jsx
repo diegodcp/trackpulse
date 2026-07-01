@@ -24,6 +24,59 @@ function formatReplayTime(value) {
   return parsed.toISOString();
 }
 
+function clampProgress(value) {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return null;
+  }
+  return Math.min(1, Math.max(0, value));
+}
+
+function deterministicProgressFallback(driverNumber) {
+  const normalized = ((driverNumber * 37) % 100) / 100;
+  return normalized;
+}
+
+function projectProgressToCircuit(progress, circuit) {
+  if (!circuit || !Array.isArray(circuit.centerline) || circuit.centerline.length < 2) {
+    return null;
+  }
+
+  const points = circuit.centerline;
+  const segments = [];
+  let totalLength = 0;
+
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const start = points[index];
+    const end = points[index + 1];
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    segments.push({ start, end, length });
+    totalLength += length;
+  }
+
+  if (totalLength <= 0) {
+    return points[0] ?? null;
+  }
+
+  const targetDistance = clampProgress(progress) * totalLength;
+  let traversed = 0;
+
+  for (const segment of segments) {
+    if (traversed + segment.length >= targetDistance) {
+      const remaining = targetDistance - traversed;
+      const ratio = segment.length > 0 ? remaining / segment.length : 0;
+      return {
+        x: segment.start.x + (segment.end.x - segment.start.x) * ratio,
+        y: segment.start.y + (segment.end.y - segment.start.y) * ratio
+      };
+    }
+    traversed += segment.length;
+  }
+
+  return points[points.length - 1];
+}
+
 function projectLocationToCircuit(location, bounds, circuit) {
   if (!location || !bounds || !circuit) {
     return null;
@@ -115,25 +168,49 @@ export function TrackMapPanel({ activeLayer }) {
   const timelinePoint = replayState?.timeline_points?.[effectiveCursor] ?? replayState?.active_location ?? null;
 
   const replayMarker = useMemo(() => {
-    if (!timelinePoint || !replayState?.coordinate_bounds || !circuit) {
+    const carMarkers = snapshotQuery.data?.car_markers;
+    if (!Array.isArray(carMarkers) || carMarkers.length === 0 || !circuit) {
       return [];
     }
 
-    const position = projectLocationToCircuit(timelinePoint, replayState.coordinate_bounds, circuit);
-    if (!position) {
-      return [];
-    }
+    const coordinateBounds = replayState?.coordinate_bounds ?? null;
 
-    return [
-      {
-        id: `driver-${timelinePoint.driver_number}`,
-        label: `#${timelinePoint.driver_number}`,
-        x: position.x,
-        y: position.y,
-        testId: 'replay-car-marker'
-      }
-    ];
-  }, [timelinePoint, replayState?.coordinate_bounds, circuit]);
+    return carMarkers
+      .map((marker) => {
+        const driverNumber = Number(marker?.driver_number);
+        if (!Number.isFinite(driverNumber)) {
+          return null;
+        }
+
+        const markerX = typeof marker?.x === 'number' ? marker.x : null;
+        const markerY = typeof marker?.y === 'number' ? marker.y : null;
+
+        let projected = null;
+        if (markerX != null && markerY != null && coordinateBounds) {
+          projected = projectLocationToCircuit({ x: markerX, y: markerY }, coordinateBounds, circuit);
+        }
+
+        if (!projected) {
+          const normalizedProgress = clampProgress(Number(marker?.normalized_progress));
+          const fallbackProgress =
+            normalizedProgress ?? deterministicProgressFallback(driverNumber);
+          projected = projectProgressToCircuit(fallbackProgress, circuit);
+        }
+
+        if (!projected) {
+          return null;
+        }
+
+        return {
+          id: `driver-${driverNumber}`,
+          label: `#${driverNumber}`,
+          x: projected.x,
+          y: projected.y,
+          testId: 'replay-car-marker'
+        };
+      })
+      .filter(Boolean);
+  }, [snapshotQuery.data?.car_markers, replayState?.coordinate_bounds, circuit]);
 
   const handleToggleReplay = async () => {
     if (!replayState) {
@@ -192,6 +269,9 @@ export function TrackMapPanel({ activeLayer }) {
       </header>
       <p className="track-map-precision-note" data-testid="track-map-precision-note">
         Stylized Bahrain circuit. Approximate geometry only; no racing-line precision is claimed.
+      </p>
+      <p className="track-map-precision-note" data-testid="car-marker-approx-note">
+        Car markers use measured replay locations but are displayed as approximate positions.
       </p>
       <div className="replay-controls" aria-label="Fixture replay controls">
         <p className="replay-label">Fixture replay</p>
