@@ -24,6 +24,13 @@ class AppSettings(BaseSettings):
     openf1_mode: Literal["fixture", "historical", "live"] = "fixture"
     openf1_base_url: str = "https://api.openf1.org"
     openf1_bearer_token: str | None = None
+    openf1_username: str | None = None
+    openf1_password: str | None = None
+    openf1_token_url: str = "https://api.openf1.org/token"
+    openf1_live_mqtt_host: str = "mqtt.openf1.org"
+    openf1_live_mqtt_port: int = 8883
+    openf1_live_mqtt_topics: str = "weather,location,car_data,laps,race_control"
+    openf1_live_reconnect_delay_seconds: float = 1.0
     openf1_fixture_data_dir: str = _default_openf1_fixture_data_dir()
     openf1_timeout_seconds: float = 10.0
     openf1_max_retries: int = 2

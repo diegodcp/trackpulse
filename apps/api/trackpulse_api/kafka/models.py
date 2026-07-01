@@ -24,6 +24,7 @@ class RawOpenF1Event(BaseModel):
     event_type: str
     payload: dict[str, Any]
     schema_version: int = 1
+    source_id: str | None = None
     session_key: int | None = None
     meeting_key: int | None = None
     driver_number: int | None = None

@@ -31,10 +31,11 @@ class KafkaRawEventProducer:
         self._client = client
 
     async def publish(self, event: RawOpenF1Event) -> None:
+        key = event.source_id or event.event_id
         await self._client.send_and_wait(
             topic=event.topic,
             value=event.to_message_bytes(),
-            key=event.event_id.encode("utf-8"),
+            key=key.encode("utf-8"),
             headers=[("event_type", event.event_type.encode("utf-8"))],
         )
 
