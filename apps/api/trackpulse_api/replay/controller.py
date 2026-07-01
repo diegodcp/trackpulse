@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
-from ..openf1 import OpenF1HistoricalClient, OpenF1Location, SessionDiscoveryQuery
+from ..openf1 import OpenF1HistoricalClient, OpenF1Location, OpenF1Weather, SessionDiscoveryQuery
 from ..settings import AppSettings
 
 SUPPORTED_REPLAY_SPEEDS: tuple[int, ...] = (1, 5, 20, 100)
@@ -44,6 +44,18 @@ class ReplayCoordinateBounds:
 
 
 @dataclass(frozen=True)
+class ReplayWeatherPoint:
+    occurred_at: str
+    track_temperature: float | None
+    air_temperature: float | None
+    humidity: float | None
+    pressure: float | None
+    rainfall: bool | None
+    wind_direction: int | None
+    wind_speed: float | None
+
+
+@dataclass(frozen=True)
 class ReplayStateSnapshot:
     fixture_id: str
     status: str
@@ -52,6 +64,7 @@ class ReplayStateSnapshot:
     total_points: int
     progress_pct: float
     replay_time: str | None
+    active_weather: ReplayWeatherPoint | None
     active_location: ReplayLocationPoint | None
     coordinate_bounds: ReplayCoordinateBounds | None
     timeline_points: list[ReplayLocationPoint]
@@ -65,10 +78,12 @@ class FixtureReplayController:
         self._lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
         self._timeline: list[OpenF1Location] = []
+        self._weather_timeline: list[OpenF1Weather] = []
         self._status = "idle"
         self._cursor = -1
         self._speed_multiplier = 1
         self._active_location: ReplayLocationPoint | None = None
+        self._active_weather: ReplayWeatherPoint | None = None
         self._coordinate_bounds: ReplayCoordinateBounds | None = None
         self._replay_time: str | None = None
         self._stop_requested = False
@@ -108,6 +123,7 @@ class FixtureReplayController:
             if self._status == "completed" or self._cursor >= len(self._timeline) - 1:
                 self._cursor = -1
                 self._active_location = None
+                self._active_weather = self._weather_at(None)
                 self._replay_time = None
 
             self._stop_requested = False
@@ -156,6 +172,7 @@ class FixtureReplayController:
             total_points=total_points,
             progress_pct=progress_pct,
             replay_time=self._replay_time,
+            active_weather=self._active_weather,
             active_location=self._active_location,
             coordinate_bounds=self._coordinate_bounds,
             timeline_points=[
@@ -194,9 +211,13 @@ class FixtureReplayController:
             )
         )
         timeline = await client.get_location(session_key=session.session_key)
+        weather_timeline = await client.get_weather(session_key=session.session_key)
         timeline = sorted(timeline, key=lambda record: (record.date, record.driver_number))
+        weather_timeline = sorted(weather_timeline, key=lambda record: record.date)
 
         self._timeline = timeline
+        self._weather_timeline = weather_timeline
+        self._active_weather = self._weather_at(None)
         self._coordinate_bounds = _compute_bounds(timeline)
 
     async def _run(self) -> None:
@@ -223,6 +244,7 @@ class FixtureReplayController:
                     x=current.x,
                     y=current.y,
                 )
+                self._active_weather = self._weather_at(current.date)
 
                 delay_seconds = 0.0
                 if next_index + 1 < len(self._timeline):
@@ -231,6 +253,31 @@ class FixtureReplayController:
                     delay_seconds = max(0.0, (next_ts - current_ts) / self._speed_multiplier)
 
             await asyncio.sleep(delay_seconds)
+
+    def _weather_at(self, occurred_at: datetime | None) -> ReplayWeatherPoint | None:
+        if not self._weather_timeline:
+            return None
+
+        if occurred_at is None:
+            selected = self._weather_timeline[0]
+        else:
+            selected = self._weather_timeline[0]
+            for item in self._weather_timeline:
+                if item.date <= occurred_at:
+                    selected = item
+                else:
+                    break
+
+        return ReplayWeatherPoint(
+            occurred_at=_iso(selected.date),
+            track_temperature=selected.track_temperature,
+            air_temperature=selected.air_temperature,
+            humidity=selected.humidity,
+            pressure=selected.pressure,
+            rainfall=selected.rainfall,
+            wind_direction=selected.wind_direction,
+            wind_speed=selected.wind_speed,
+        )
 
 
 def _compute_bounds(points: list[OpenF1Location]) -> ReplayCoordinateBounds | None:

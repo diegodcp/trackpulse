@@ -140,6 +140,25 @@ def _read_fixture_manifest(settings_dir: str, fixture_id: str) -> FixtureManifes
 
 def _track_snapshot_from_replay(snapshot: ReplayStateSnapshot) -> TrackSnapshot:
     reducer = TrackStateReducer(fixture_id=snapshot.fixture_id)
+
+    if snapshot.active_weather is not None:
+        reducer.apply_event(
+            {
+                "fixture_id": snapshot.fixture_id,
+                "event_type": "weather",
+                "occurred_at": snapshot.active_weather.occurred_at,
+                "payload": {
+                    "track_temperature": snapshot.active_weather.track_temperature,
+                    "air_temperature": snapshot.active_weather.air_temperature,
+                    "humidity": snapshot.active_weather.humidity,
+                    "pressure": snapshot.active_weather.pressure,
+                    "rainfall": snapshot.active_weather.rainfall,
+                    "wind_direction": snapshot.active_weather.wind_direction,
+                    "wind_speed": snapshot.active_weather.wind_speed,
+                },
+            }
+        )
+
     if snapshot.total_points > 0 and snapshot.timeline_points:
         max_index = min(snapshot.cursor, len(snapshot.timeline_points) - 1)
         for idx in range(max_index + 1):

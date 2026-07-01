@@ -69,7 +69,8 @@ export function CircuitMap({
   activeLayer,
   windDirectionDeg = null,
   windSpeedMs = null,
-  carMarkers = []
+  carMarkers = [],
+  segmentStates = []
 }) {
   const [hoveredSegment, setHoveredSegment] = useState(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
@@ -85,6 +86,11 @@ export function CircuitMap({
   const { width, height, centerline, segments } = circuit;
   const windArrows = createWindArrows(width, height, windDirectionDeg);
   const showWindOverlay = activeLayer === 'Wind';
+  const segmentStateById = new Map(
+    (Array.isArray(segmentStates) ? segmentStates : [])
+      .filter((item) => item && typeof item.segment_id === 'string')
+      .map((item) => [item.segment_id, item])
+  );
   const pathData = centerline
     .map((point, idx) => `${idx === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
     .join(' ');
@@ -135,7 +141,10 @@ export function CircuitMap({
 
         {/* Segment overlays */}
         {segments.map((segment) => {
-          const windProjection = buildWindProjection(segment.dominantDirectionDeg, windDirectionDeg, windSpeedMs);
+          const backendSegmentState = segmentStateById.get(segment.segmentId);
+          const fallbackWindProjection = buildWindProjection(segment.dominantDirectionDeg, windDirectionDeg, windSpeedMs);
+          const windClass = backendSegmentState?.derived?.wind_class ?? fallbackWindProjection.windClass;
+          const measuredWindDirection = backendSegmentState?.measured?.wind_direction_deg ?? windDirectionDeg;
           const segmentPath = segment.path
             .map((point, idx) => `${idx === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
             .join(' ');
@@ -156,8 +165,9 @@ export function CircuitMap({
                 onFocus={(e) => handleSegmentFocus(segment, e)}
                 role="button"
                 tabIndex="0"
-                aria-label={`${segment.label} segment in sector ${segment.sector}; derived wind class ${formatWindClass(windProjection.windClass)}`}
-                data-derived-wind-class={windProjection.windClass}
+                aria-label={`${segment.label} segment in sector ${segment.sector}; derived wind class ${formatWindClass(windClass)}`}
+                data-derived-wind-class={windClass}
+                data-measured-wind-direction={measuredWindDirection ?? 'unknown'}
               />
             </g>
           );
@@ -189,7 +199,7 @@ export function CircuitMap({
               x="-70"
               y="0"
               width="140"
-              height="122"
+              height="140"
               rx="4"
               className="tooltip-box"
             />
@@ -206,10 +216,13 @@ export function CircuitMap({
               Type: {hoveredSegment.type.replace(/_/g, ' ')}
             </text>
             <text x="0" y="94" className="tooltip-info" textAnchor="middle">
-              Truth Label: Inferred (placeholder)
+              Wind Dir (Measured): {segmentStateById.get(hoveredSegment.segmentId)?.measured?.wind_direction_deg ?? windDirectionDeg ?? '--'} deg
             </text>
             <text x="0" y="112" className="tooltip-info" textAnchor="middle">
-              Wind (Derived): {formatWindClass(buildWindProjection(hoveredSegment.dominantDirectionDeg, windDirectionDeg, windSpeedMs).windClass)}
+              Wind Speed (Measured): {segmentStateById.get(hoveredSegment.segmentId)?.measured?.wind_speed_ms ?? windSpeedMs ?? '--'} m/s
+            </text>
+            <text x="0" y="130" className="tooltip-info" textAnchor="middle">
+              Projection (Derived): {formatWindClass(segmentStateById.get(hoveredSegment.segmentId)?.derived?.wind_class ?? buildWindProjection(hoveredSegment.dominantDirectionDeg, windDirectionDeg, windSpeedMs).windClass)}
             </text>
           </g>
         )}

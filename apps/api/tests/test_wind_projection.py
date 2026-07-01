@@ -60,6 +60,32 @@ def test_project_wind_projection_boundary_classes() -> None:
     assert boundary_tailwind.wind_class == "tailwind"
 
 
+@pytest.mark.parametrize(
+    ("relative_angle_deg", "expected_class"),
+    [
+        (-30.0, "headwind"),
+        (30.0, "headwind"),
+        (-30.1, "crosswind_left"),
+        (30.1, "crosswind_right"),
+        (-149.9, "crosswind_left"),
+        (149.9, "crosswind_right"),
+        (-150.0, "tailwind"),
+        (150.0, "tailwind"),
+    ],
+)
+def test_project_wind_projection_classification_boundaries(
+    relative_angle_deg: float,
+    expected_class: str,
+) -> None:
+    projected = project_wind_projection(
+        wind_direction_deg=relative_angle_deg,
+        wind_speed_ms=7.0,
+        segment_direction_deg=0.0,
+    )
+
+    assert projected.wind_class == expected_class
+
+
 def test_project_wind_projection_normalizes_angles() -> None:
     projected = project_wind_projection(
         wind_direction_deg=725.0,

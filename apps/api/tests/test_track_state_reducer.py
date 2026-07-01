@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from trackpulse_api.state import TrackStateReducer
 
 
@@ -31,6 +33,19 @@ def test_reducer_updates_weather_state() -> None:
     assert snapshot.weather.track_temperature_c == 42.3
     assert snapshot.weather.wind_speed_ms == 3.6
     assert snapshot.weather.truth_label == "measured"
+    assert len(snapshot.segment_states) == 16
+
+    first_segment = snapshot.segment_states[0]
+    assert first_segment["segment_id"] == "bh-s01"
+    assert first_segment["measured"]["truth_label"] == "measured"
+    assert first_segment["derived"]["truth_label"] == "derived"
+    assert first_segment["derived"]["wind_class"] in {
+        "headwind",
+        "tailwind",
+        "crosswind_left",
+        "crosswind_right",
+        "unknown",
+    }
 
 
 def test_reducer_accepts_updated_event_type_variant() -> None:
@@ -112,6 +127,44 @@ def test_reducer_builds_snapshot_without_weather() -> None:
     assert snapshot.weather.available is False
     assert snapshot.weather.track_temperature_c is None
     assert [marker.driver_number for marker in snapshot.car_markers] == [1, 11]
-    assert snapshot.segment_states == [{"status": "not_implemented", "truth_label": "derived"}]
+    assert len(snapshot.segment_states) == 16
+    assert snapshot.segment_states[0]["derived"]["wind_class"] == "unknown"
     assert snapshot.connection_status == "connected"
     assert snapshot.replay_status == "idle"
+
+
+def test_reducer_wind_projection_changes_when_wind_direction_changes() -> None:
+    reducer = TrackStateReducer()
+
+    snapshot_headwind = reducer.apply_event(
+        {
+            "fixture_id": "bahrain-2023-race",
+            "event_type": "weather",
+            "session_key": 9149,
+            "occurred_at": "2023-03-05T15:00:00.000Z",
+            "payload": {
+                "wind_direction": 162,
+                "wind_speed": 10.0,
+            },
+        }
+    )
+    snapshot_tailwind = reducer.apply_event(
+        {
+            "fixture_id": "bahrain-2023-race",
+            "event_type": "weather",
+            "session_key": 9149,
+            "occurred_at": "2023-03-05T15:00:02.000Z",
+            "payload": {
+                "wind_direction": 342,
+                "wind_speed": 10.0,
+            },
+        }
+    )
+
+    segment_headwind = next(item for item in snapshot_headwind.segment_states if item["segment_id"] == "bh-s01")
+    segment_tailwind = next(item for item in snapshot_tailwind.segment_states if item["segment_id"] == "bh-s01")
+
+    assert segment_headwind["derived"]["wind_class"] == "headwind"
+    assert segment_tailwind["derived"]["wind_class"] == "tailwind"
+    assert segment_headwind["derived"]["wind_relative_angle_deg"] == pytest.approx(0.0)
+    assert segment_tailwind["derived"]["wind_relative_angle_deg"] == pytest.approx(-180.0)

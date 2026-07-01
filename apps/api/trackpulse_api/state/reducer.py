@@ -5,6 +5,9 @@ from typing import Any, Iterable, Literal, Mapping
 
 from pydantic import BaseModel, Field
 
+from ..inference import project_wind_projection
+from .track_model import BAHRAIN_TRACK_SEGMENTS
+
 
 class WeatherMeasuredState(BaseModel):
     available: bool = False
@@ -48,8 +51,7 @@ class TrackStateReducer:
         self._session_key: int | None = None
         self._weather = WeatherMeasuredState()
         self._car_markers_by_driver: dict[int, CarMarkerState] = {}
-        # Placeholder until segment assignment/scoring lands.
-        self._segment_states: list[dict[str, Any]] = [{"status": "not_implemented", "truth_label": "derived"}]
+        self._segment_states: list[dict[str, Any]] = self._build_segment_states()
         self._connection_status = "connected"
         self._replay_status = "idle"
 
@@ -112,6 +114,7 @@ class TrackStateReducer:
             wind_direction_deg=_to_int(payload.get("wind_direction")),
             wind_speed_ms=_to_float(payload.get("wind_speed")),
         )
+        self._segment_states = self._build_segment_states()
 
     def _apply_location(self, event: Mapping[str, Any], payload: Mapping[str, Any]) -> None:
         driver_number = event.get("driver_number")
@@ -152,6 +155,40 @@ class TrackStateReducer:
 
     def _sorted_markers(self) -> list[CarMarkerState]:
         return [self._car_markers_by_driver[key] for key in sorted(self._car_markers_by_driver.keys())]
+
+    def _build_segment_states(self) -> list[dict[str, Any]]:
+        segment_states: list[dict[str, Any]] = []
+
+        for segment in BAHRAIN_TRACK_SEGMENTS:
+            projection = project_wind_projection(
+                wind_direction_deg=(
+                    float(self._weather.wind_direction_deg)
+                    if self._weather.wind_direction_deg is not None
+                    else None
+                ),
+                wind_speed_ms=self._weather.wind_speed_ms,
+                segment_direction_deg=segment.direction_deg,
+            )
+
+            segment_states.append(
+                {
+                    "segment_id": segment.segment_id,
+                    "direction_deg": segment.direction_deg,
+                    "measured": {
+                        "wind_direction_deg": self._weather.wind_direction_deg,
+                        "wind_speed_ms": self._weather.wind_speed_ms,
+                        "truth_label": "measured",
+                    },
+                    "derived": {
+                        "wind_relative_angle_deg": projection.relative_angle_deg,
+                        "wind_class": projection.wind_class,
+                        "wind_strength_score": projection.strength_score,
+                        "truth_label": "derived",
+                    },
+                }
+            )
+
+        return segment_states
 
 
 def _to_float(value: Any) -> float | None:

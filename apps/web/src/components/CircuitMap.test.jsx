@@ -32,7 +32,8 @@ describe('TP-BH-0012 Bahrain circuit map', () => {
     expect(screen.getByText('Segment ID: bh-s01')).toBeInTheDocument();
     expect(screen.getByText('Sector 1')).toBeInTheDocument();
     expect(screen.getByText('Type: straight')).toBeInTheDocument();
-    expect(screen.getByText('Truth Label: Inferred (placeholder)')).toBeInTheDocument();
+    expect(screen.getByText('Wind Dir (Measured): -- deg')).toBeInTheDocument();
+    expect(screen.getByText('Projection (Derived): unknown')).toBeInTheDocument();
   });
 
   it('applies active layer class to segments', () => {
@@ -125,7 +126,42 @@ describe('TP-BH-0012 Bahrain circuit map', () => {
 
     await user.hover(startFinishSegment);
 
-    expect(screen.getByText('Wind (Derived): crosswind right')).toBeInTheDocument();
+    expect(screen.getByText('Projection (Derived): crosswind right')).toBeInTheDocument();
+  });
+
+  it('prefers backend segment wind projection values when available', async () => {
+    const user = userEvent.setup();
+    render(
+      <CircuitMap
+        circuit={bahrainCircuit}
+        activeLayer="Wind"
+        windDirectionDeg={310}
+        windSpeedMs={2.7}
+        segmentStates={[
+          {
+            segment_id: 'bh-s01',
+            direction_deg: 162,
+            measured: {
+              wind_direction_deg: 162,
+              wind_speed_ms: 9.0,
+              truth_label: 'measured'
+            },
+            derived: {
+              wind_relative_angle_deg: 0,
+              wind_class: 'headwind',
+              wind_strength_score: 45,
+              truth_label: 'derived'
+            }
+          }
+        ]}
+      />
+    );
+
+    const startFinishSegment = screen.getByLabelText(/Start\/Finish Straight segment/);
+    await user.hover(startFinishSegment);
+
+    expect(screen.getByText('Wind Dir (Measured): 162 deg')).toBeInTheDocument();
+    expect(screen.getByText('Projection (Derived): headwind')).toBeInTheDocument();
   });
 
   it('segment paths render correctly', () => {

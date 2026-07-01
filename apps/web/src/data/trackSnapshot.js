@@ -26,13 +26,35 @@ const carMarkerSchema = z
   })
   .passthrough();
 
+const segmentStateSchema = z
+  .object({
+    segment_id: z.string(),
+    direction_deg: z.coerce.number(),
+    measured: z
+      .object({
+        wind_direction_deg: z.coerce.number().nullable(),
+        wind_speed_ms: z.coerce.number().nullable(),
+        truth_label: z.literal('measured')
+      })
+      .passthrough(),
+    derived: z
+      .object({
+        wind_relative_angle_deg: z.coerce.number().nullable(),
+        wind_class: z.string(),
+        wind_strength_score: z.coerce.number().nullable(),
+        truth_label: z.literal('derived')
+      })
+      .passthrough()
+  })
+  .passthrough();
+
 const snapshotSchema = z.object({
   fixture_id: z.string().nullable(),
   replay_time: z.string().nullable(),
   session_key: z.number().nullable(),
   weather: weatherSchema,
   car_markers: z.array(carMarkerSchema),
-  segment_states: z.array(z.unknown()),
+  segment_states: z.array(segmentStateSchema),
   connection_status: z.string(),
   replay_status: z.string()
 });

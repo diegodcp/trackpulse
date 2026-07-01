@@ -84,6 +84,14 @@ async def test_replay_api_endpoints_expose_fixture_manifest_status_and_track_sta
                 "wind_speed": 2.7,
                 "wind_direction": 192,
                 "rainfall": False,
+            },
+            {
+                "date": "2023-03-05T15:00:03+00:00",
+                "session_key": 9149,
+                "track_temperature": 42.8,
+                "wind_speed": 3.1,
+                "wind_direction": 342,
+                "rainfall": False,
             }
         ],
     )
@@ -164,8 +172,13 @@ async def test_replay_api_endpoints_expose_fixture_manifest_status_and_track_sta
     snapshot = track_state_payload["snapshot"]
     assert snapshot["fixture_id"] == "bahrain-2023-race"
     assert isinstance(snapshot["weather"], dict)
+    assert snapshot["weather"]["available"] is True
     assert snapshot["weather"]["truth_label"] == "measured"
     assert isinstance(snapshot["car_markers"], list)
+    assert isinstance(snapshot["segment_states"], list)
+    assert len(snapshot["segment_states"]) == 16
+    assert snapshot["segment_states"][0]["measured"]["truth_label"] == "measured"
+    assert snapshot["segment_states"][0]["derived"]["truth_label"] == "derived"
     assert snapshot["replay_status"] in {"running", "completed"}
 
     assert pause_response.status_code == 200
