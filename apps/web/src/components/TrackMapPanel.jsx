@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CircuitMap } from './CircuitMap';
+import { TruthLabelBadge } from './TruthLabelBadge';
 import bahrainCircuit from '../fixtures/bahrainCircuit';
 import { useTrackSnapshot } from '../data/trackSnapshot';
 import {
@@ -273,6 +274,11 @@ export function TrackMapPanel({ activeLayer }) {
       <p className="track-map-precision-note" data-testid="car-marker-approx-note">
         Car markers use measured replay locations but are displayed as approximate positions.
       </p>
+      {activeLayer === 'Traffic' && (
+        <p className="track-map-precision-note" data-testid="traffic-derived-note">
+          Traffic density overlay is <TruthLabelBadge label="derived" /> from segment occupancy and adjacency. This is not a dirty-air precision model.
+        </p>
+      )}
       <div className="replay-controls" aria-label="Fixture replay controls">
         <p className="replay-label">Fixture replay</p>
         <div className="replay-controls-row">

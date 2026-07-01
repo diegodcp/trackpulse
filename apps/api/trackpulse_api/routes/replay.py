@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from ..inference import CircuitPoint, assign_nearest_segment
 from ..replay.controller import (
     FixtureNotFoundError,
     FixtureReplayController,
@@ -18,6 +19,13 @@ from ..replay.controller import (
     ReplayStateSnapshot,
 )
 from ..settings import get_app_settings
+from ..state.track_model import (
+    BAHRAIN_MAP_HEIGHT,
+    BAHRAIN_MAP_PADDING,
+    BAHRAIN_MAP_WIDTH,
+    BAHRAIN_SEGMENT_PATHS,
+    BAHRAIN_TRACK_SEGMENTS,
+)
 from ..state import TrackSnapshot, TrackStateReducer
 
 router = APIRouter(prefix="/api/v1", tags=["replay"])
@@ -163,6 +171,11 @@ def _track_snapshot_from_replay(snapshot: ReplayStateSnapshot) -> TrackSnapshot:
         max_index = min(snapshot.cursor, len(snapshot.timeline_points) - 1)
         for idx in range(max_index + 1):
             point = snapshot.timeline_points[idx]
+            normalized_progress = idx / max(1, len(snapshot.timeline_points) - 1)
+            segment_id = _assign_segment_for_location(point, snapshot.coordinate_bounds)
+            if segment_id is None:
+                segment_id = _segment_id_from_progress(normalized_progress)
+
             reducer.apply_event(
                 {
                     "fixture_id": snapshot.fixture_id,
@@ -174,6 +187,8 @@ def _track_snapshot_from_replay(snapshot: ReplayStateSnapshot) -> TrackSnapshot:
                         "x": point.x,
                         "y": point.y,
                         "date": point.occurred_at,
+                        "segment_id": segment_id,
+                        "normalized_progress": normalized_progress,
                     },
                 }
             )
@@ -188,6 +203,49 @@ def _track_snapshot_from_replay(snapshot: ReplayStateSnapshot) -> TrackSnapshot:
         }
     )
     return reducer.snapshot()
+
+
+def _project_location_to_map(
+    *,
+    x: float,
+    y: float,
+    coordinate_bounds: ReplayCoordinateBounds,
+) -> CircuitPoint:
+    x_span = max(1.0, coordinate_bounds.max_x - coordinate_bounds.min_x)
+    y_span = max(1.0, coordinate_bounds.max_y - coordinate_bounds.min_y)
+    map_width = max(1.0, BAHRAIN_MAP_WIDTH - (BAHRAIN_MAP_PADDING * 2))
+    map_height = max(1.0, BAHRAIN_MAP_HEIGHT - (BAHRAIN_MAP_PADDING * 2))
+
+    normalized_x = (x - coordinate_bounds.min_x) / x_span
+    normalized_y = (y - coordinate_bounds.min_y) / y_span
+
+    return CircuitPoint(
+        x=float(BAHRAIN_MAP_PADDING + (normalized_x * map_width)),
+        y=float(BAHRAIN_MAP_PADDING + (normalized_y * map_height)),
+    )
+
+
+def _assign_segment_for_location(
+    point: ReplayLocationPoint,
+    coordinate_bounds: ReplayCoordinateBounds | None,
+) -> str | None:
+    if coordinate_bounds is None:
+        return None
+
+    projected = _project_location_to_map(
+        x=point.x,
+        y=point.y,
+        coordinate_bounds=coordinate_bounds,
+    )
+    assignment = assign_nearest_segment(point=projected, segments=BAHRAIN_SEGMENT_PATHS)
+    return assignment.segment_id
+
+
+def _segment_id_from_progress(progress: float) -> str:
+    clamped = min(1.0, max(0.0, progress))
+    segment_count = len(BAHRAIN_TRACK_SEGMENTS)
+    index = min(segment_count - 1, int(clamped * segment_count))
+    return BAHRAIN_TRACK_SEGMENTS[index].segment_id
 
 
 def _sse_event(event: str, payload: dict[str, Any]) -> str:

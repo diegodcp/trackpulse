@@ -168,3 +168,72 @@ def test_reducer_wind_projection_changes_when_wind_direction_changes() -> None:
     assert segment_tailwind["derived"]["wind_class"] == "tailwind"
     assert segment_headwind["derived"]["wind_relative_angle_deg"] == pytest.approx(0.0)
     assert segment_tailwind["derived"]["wind_relative_angle_deg"] == pytest.approx(-180.0)
+
+
+def test_reducer_traffic_scores_are_zero_when_no_cars_present() -> None:
+    reducer = TrackStateReducer()
+
+    snapshot = reducer.snapshot()
+
+    assert len(snapshot.segment_states) == 16
+    assert all(segment["derived"]["traffic_score"] == pytest.approx(0.0) for segment in snapshot.segment_states)
+    assert all(segment["derived"]["traffic_truth_label"] == "derived" for segment in snapshot.segment_states)
+
+
+def test_reducer_traffic_scores_include_single_car_own_and_adjacent_segments() -> None:
+    reducer = TrackStateReducer()
+
+    snapshot = reducer.apply_event(
+        {
+            "event_type": "location",
+            "driver_number": 1,
+            "occurred_at": "2023-03-05T15:00:00.000Z",
+            "payload": {
+                "x": 10.0,
+                "y": 20.0,
+                "segment_id": "bh-s03",
+            },
+        }
+    )
+
+    scores = {item["segment_id"]: item["derived"]["traffic_score"] for item in snapshot.segment_states}
+
+    assert scores["bh-s03"] == pytest.approx(20.0)
+    assert scores["bh-s02"] == pytest.approx(10.0)
+    assert scores["bh-s04"] == pytest.approx(10.0)
+    assert scores["bh-s01"] == pytest.approx(0.0)
+
+
+def test_reducer_traffic_scores_increase_for_clustered_cars() -> None:
+    reducer = TrackStateReducer()
+
+    reducer.apply_event(
+        {
+            "event_type": "location",
+            "driver_number": 1,
+            "occurred_at": "2023-03-05T15:00:00.000Z",
+            "payload": {
+                "x": 10.0,
+                "y": 20.0,
+                "segment_id": "bh-s08",
+            },
+        }
+    )
+    snapshot = reducer.apply_event(
+        {
+            "event_type": "location",
+            "driver_number": 11,
+            "occurred_at": "2023-03-05T15:00:00.100Z",
+            "payload": {
+                "x": 12.0,
+                "y": 22.0,
+                "segment_id": "bh-s08",
+            },
+        }
+    )
+
+    scores = {item["segment_id"]: item["derived"]["traffic_score"] for item in snapshot.segment_states}
+
+    assert scores["bh-s08"] == pytest.approx(40.0)
+    assert scores["bh-s07"] == pytest.approx(20.0)
+    assert scores["bh-s09"] == pytest.approx(20.0)

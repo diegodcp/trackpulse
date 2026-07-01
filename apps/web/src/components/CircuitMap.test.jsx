@@ -129,6 +129,73 @@ describe('TP-BH-0012 Bahrain circuit map', () => {
     expect(screen.getByText('Projection (Derived): crosswind right')).toBeInTheDocument();
   });
 
+  it('applies traffic score metadata when traffic layer is active', () => {
+    render(
+      <CircuitMap
+        circuit={bahrainCircuit}
+        activeLayer="Traffic"
+        segmentStates={[
+          {
+            segment_id: 'bh-s01',
+            direction_deg: 162,
+            measured: {
+              wind_direction_deg: 310,
+              wind_speed_ms: 2.7,
+              truth_label: 'measured'
+            },
+            derived: {
+              wind_relative_angle_deg: 148,
+              wind_class: 'crosswind_right',
+              wind_strength_score: 27,
+              traffic_score: 82,
+              traffic_truth_label: 'derived',
+              truth_label: 'derived'
+            }
+          }
+        ]}
+      />
+    );
+
+    const startFinishSegment = screen.getByLabelText(/Start\/Finish Straight segment/);
+    expect(startFinishSegment).toHaveAttribute('data-derived-traffic-score', '82.0');
+    expect(startFinishSegment).toHaveAttribute('data-derived-traffic-truth-label', 'derived');
+  });
+
+  it('shows traffic derived values in segment tooltip', async () => {
+    const user = userEvent.setup();
+    render(
+      <CircuitMap
+        circuit={bahrainCircuit}
+        activeLayer="Traffic"
+        segmentStates={[
+          {
+            segment_id: 'bh-s01',
+            direction_deg: 162,
+            measured: {
+              wind_direction_deg: 310,
+              wind_speed_ms: 2.7,
+              truth_label: 'measured'
+            },
+            derived: {
+              wind_relative_angle_deg: 148,
+              wind_class: 'crosswind_right',
+              wind_strength_score: 27,
+              traffic_score: 61.5,
+              traffic_truth_label: 'derived',
+              truth_label: 'derived'
+            }
+          }
+        ]}
+      />
+    );
+
+    const startFinishSegment = screen.getByLabelText(/Start\/Finish Straight segment/);
+    await user.hover(startFinishSegment);
+
+    expect(screen.getByText('Traffic (Derived): 61.5')).toBeInTheDocument();
+    expect(screen.getByText('Traffic Truth: derived')).toBeInTheDocument();
+  });
+
   it('prefers backend segment wind projection values when available', async () => {
     const user = userEvent.setup();
     render(

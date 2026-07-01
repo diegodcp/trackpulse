@@ -41,6 +41,20 @@ function formatWindClass(windClass) {
   return windClass.replace(/_/g, ' ');
 }
 
+function clampTrafficScore(value) {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return 0;
+  }
+  return Math.min(100, Math.max(0, value));
+}
+
+function getTrafficStroke(score) {
+  const intensity = clampTrafficScore(score) / 100;
+  const hue = 44 - intensity * 36;
+  const lightness = 66 - intensity * 24;
+  return `hsl(${hue} 94% ${lightness}%)`;
+}
+
 function createWindArrows(width, height, windDirectionDeg) {
   const columns = 6;
   const rows = 4;
@@ -145,9 +159,19 @@ export function CircuitMap({
           const fallbackWindProjection = buildWindProjection(segment.dominantDirectionDeg, windDirectionDeg, windSpeedMs);
           const windClass = backendSegmentState?.derived?.wind_class ?? fallbackWindProjection.windClass;
           const measuredWindDirection = backendSegmentState?.measured?.wind_direction_deg ?? windDirectionDeg;
+          const trafficScore = clampTrafficScore(backendSegmentState?.derived?.traffic_score ?? 0);
+          const trafficTruthLabel = backendSegmentState?.derived?.traffic_truth_label ?? 'derived';
+          const isTrafficLayer = activeLayer === 'Traffic';
           const segmentPath = segment.path
             .map((point, idx) => `${idx === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
             .join(' ');
+          const segmentStyle = isTrafficLayer
+            ? {
+                stroke: getTrafficStroke(trafficScore),
+                opacity: 0.35 + (trafficScore / 100) * 0.6,
+                strokeWidth: 7 + (trafficScore / 100) * 6
+              }
+            : undefined;
 
           return (
             <g key={segment.segmentId} className="segment-group">
@@ -168,6 +192,9 @@ export function CircuitMap({
                 aria-label={`${segment.label} segment in sector ${segment.sector}; derived wind class ${formatWindClass(windClass)}`}
                 data-derived-wind-class={windClass}
                 data-measured-wind-direction={measuredWindDirection ?? 'unknown'}
+                data-derived-traffic-score={trafficScore.toFixed(1)}
+                data-derived-traffic-truth-label={trafficTruthLabel}
+                style={segmentStyle}
               />
             </g>
           );
@@ -199,7 +226,7 @@ export function CircuitMap({
               x="-70"
               y="0"
               width="140"
-              height="140"
+              height="176"
               rx="4"
               className="tooltip-box"
             />
@@ -223,6 +250,12 @@ export function CircuitMap({
             </text>
             <text x="0" y="130" className="tooltip-info" textAnchor="middle">
               Projection (Derived): {formatWindClass(segmentStateById.get(hoveredSegment.segmentId)?.derived?.wind_class ?? buildWindProjection(hoveredSegment.dominantDirectionDeg, windDirectionDeg, windSpeedMs).windClass)}
+            </text>
+            <text x="0" y="148" className="tooltip-info" textAnchor="middle">
+              Traffic (Derived): {(clampTrafficScore(segmentStateById.get(hoveredSegment.segmentId)?.derived?.traffic_score ?? 0)).toFixed(1)}
+            </text>
+            <text x="0" y="166" className="tooltip-info" textAnchor="middle">
+              Traffic Truth: {segmentStateById.get(hoveredSegment.segmentId)?.derived?.traffic_truth_label ?? 'derived'}
             </text>
           </g>
         )}

@@ -6,6 +6,7 @@ from typing import Any, Iterable, Literal, Mapping
 from pydantic import BaseModel, Field
 
 from ..inference import project_wind_projection
+from ..inference.traffic import CarSegmentState, compute_traffic_scores
 from .track_model import BAHRAIN_TRACK_SEGMENTS
 
 
@@ -27,6 +28,7 @@ class CarMarkerState(BaseModel):
     y: float
     z: float | None = None
     occurred_at: str | None = None
+    segment_id: str | None = None
     truth_label: Literal["measured"] = "measured"
     location_label: Literal["approximate"] = "approximate"
 
@@ -51,6 +53,8 @@ class TrackStateReducer:
         self._session_key: int | None = None
         self._weather = WeatherMeasuredState()
         self._car_markers_by_driver: dict[int, CarMarkerState] = {}
+        self._segment_order = [segment.segment_id for segment in BAHRAIN_TRACK_SEGMENTS]
+        self._segment_set = set(self._segment_order)
         self._segment_states: list[dict[str, Any]] = self._build_segment_states()
         self._connection_status = "connected"
         self._replay_status = "idle"
@@ -85,7 +89,7 @@ class TrackStateReducer:
             session_key=self._session_key,
             weather=self._weather,
             car_markers=self._sorted_markers(),
-            segment_states=deepcopy(self._segment_states),
+            segment_states=self._segment_states_with_traffic(),
             connection_status=self._connection_status,
             replay_status=self._replay_status,
         )
@@ -129,6 +133,8 @@ class TrackStateReducer:
         if x is None or y is None:
             return
 
+        resolved_segment_id = self._resolve_segment_id(driver_number, payload)
+
         occurred_at = event.get("occurred_at")
         if not isinstance(occurred_at, str) or not occurred_at:
             payload_date = payload.get("date")
@@ -140,6 +146,7 @@ class TrackStateReducer:
             y=y,
             z=_to_float(payload.get("z")),
             occurred_at=occurred_at,
+            segment_id=resolved_segment_id,
         )
 
     def _apply_status(self, event: Mapping[str, Any], payload: Mapping[str, Any]) -> None:
@@ -187,6 +194,48 @@ class TrackStateReducer:
                     },
                 }
             )
+
+        return segment_states
+
+    def _resolve_segment_id(self, driver_number: int, payload: Mapping[str, Any]) -> str | None:
+        payload_segment_id = payload.get("segment_id")
+        if isinstance(payload_segment_id, str) and payload_segment_id in self._segment_set:
+            return payload_segment_id
+
+        normalized_progress = _to_float(payload.get("normalized_progress"))
+        if normalized_progress is not None:
+            return self._segment_from_progress(normalized_progress)
+
+        # Deterministic fallback keeps traffic stable even when replay points do
+        # not include segment/progress metadata yet.
+        fallback_progress = ((driver_number * 37) % 100) / 100
+        return self._segment_from_progress(fallback_progress)
+
+    def _segment_from_progress(self, progress: float) -> str | None:
+        if not self._segment_order:
+            return None
+
+        clamped = min(1.0, max(0.0, progress))
+        segment_count = len(self._segment_order)
+        index = min(segment_count - 1, int(clamped * segment_count))
+        return self._segment_order[index]
+
+    def _segment_states_with_traffic(self) -> list[dict[str, Any]]:
+        segment_states = deepcopy(self._segment_states)
+        traffic_scores = compute_traffic_scores(
+            car_states=[
+                CarSegmentState(segment_id=marker.segment_id)
+                for marker in self._car_markers_by_driver.values()
+                if isinstance(marker.segment_id, str) and marker.segment_id in self._segment_set
+            ],
+            segment_order=self._segment_order,
+        )
+
+        for segment_state in segment_states:
+            segment_id = segment_state.get("segment_id")
+            derived = segment_state.setdefault("derived", {})
+            derived["traffic_score"] = round(float(traffic_scores.get(segment_id, 0.0)), 1)
+            derived["traffic_truth_label"] = "derived"
 
         return segment_states
 

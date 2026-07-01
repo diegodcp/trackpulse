@@ -103,6 +103,16 @@ describe('TP-BH-0012 Bahrain circuit map', () => {
 
     expect(screen.getByText('Active Layer: Track Temp')).toBeInTheDocument();
   });
+
+  it('shows traffic truth label as derived when traffic layer is active', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: 'Traffic' }));
+
+    expect(screen.getByText(/Traffic density overlay is/i)).toBeInTheDocument();
+    expect(within(screen.getByTestId('traffic-derived-note')).getByText('Derived')).toBeInTheDocument();
+  });
 });
 
 describe('TP-BH-0013 Track snapshot connection', () => {

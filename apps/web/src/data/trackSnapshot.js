@@ -42,6 +42,8 @@ const segmentStateSchema = z
         wind_relative_angle_deg: z.coerce.number().nullable(),
         wind_class: z.string(),
         wind_strength_score: z.coerce.number().nullable(),
+        traffic_score: z.coerce.number().min(0).max(100).optional(),
+        traffic_truth_label: z.literal('derived').optional(),
         truth_label: z.literal('derived')
       })
       .passthrough()
