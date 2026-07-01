@@ -175,6 +175,49 @@ def _sse_event(event: str, payload: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, separators=(',', ':'))}\n\n"
 
 
+async def _track_state_sse_events(
+    request: Request,
+    controller: FixtureReplayController,
+    *,
+    max_events: int | None = None,
+):
+    last_snapshot_json: str | None = None
+    emitted_count = 0
+
+    while True:
+        if await request.is_disconnected():
+            break
+
+        replay_snapshot = controller.snapshot()
+        snapshot = _track_snapshot_from_replay(replay_snapshot)
+        snapshot_json = snapshot.model_dump_json()
+
+        if snapshot_json != last_snapshot_json:
+            last_snapshot_json = snapshot_json
+            yield _sse_event(
+                "track_state",
+                {
+                    "snapshot": snapshot.model_dump(mode="json"),
+                    "event_type": "track_state",
+                },
+            )
+        else:
+            yield _sse_event(
+                "heartbeat",
+                {
+                    "fixture_id": replay_snapshot.fixture_id,
+                    "replay_status": replay_snapshot.status,
+                    "event_type": "heartbeat",
+                },
+            )
+
+        emitted_count += 1
+        if max_events is not None and emitted_count >= max_events:
+            break
+
+        await asyncio.sleep(SSE_STREAM_INTERVAL_SECONDS)
+
+
 @router.get("/fixtures", response_model=FixturesResponse)
 async def list_fixtures(
     controller: FixtureReplayController = Depends(_controller),
@@ -260,40 +303,8 @@ async def stream_track_state(
     request: Request,
     controller: FixtureReplayController = Depends(_controller),
 ) -> StreamingResponse:
-    async def event_generator():
-        last_snapshot_json: str | None = None
-
-        while True:
-            if await request.is_disconnected():
-                break
-
-            replay_snapshot = controller.snapshot()
-            snapshot = _track_snapshot_from_replay(replay_snapshot)
-            snapshot_json = snapshot.model_dump_json()
-
-            if snapshot_json != last_snapshot_json:
-                last_snapshot_json = snapshot_json
-                yield _sse_event(
-                    "track_state",
-                    {
-                        "snapshot": snapshot.model_dump(mode="json"),
-                        "event_type": "track_state",
-                    },
-                )
-            else:
-                yield _sse_event(
-                    "heartbeat",
-                    {
-                        "fixture_id": replay_snapshot.fixture_id,
-                        "replay_status": replay_snapshot.status,
-                        "event_type": "heartbeat",
-                    },
-                )
-
-            await asyncio.sleep(SSE_STREAM_INTERVAL_SECONDS)
-
     return StreamingResponse(
-        event_generator(),
+        _track_state_sse_events(request, controller),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

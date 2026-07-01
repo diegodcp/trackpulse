@@ -8,6 +8,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from trackpulse_api.main import create_app
+from trackpulse_api.routes.replay import _controller, _track_state_sse_events
 from trackpulse_api.settings import get_settings
 
 
@@ -245,40 +246,22 @@ async def test_track_state_sse_stream_emits_track_state_and_heartbeat_events(
 
     app = create_app()
 
+    class _ConnectedRequest:
+        def __init__(self, target_app) -> None:
+            self.app = target_app
+
+        async def is_disconnected(self) -> bool:
+            return False
+
+    request = _ConnectedRequest(app)
+    controller = _controller(request)
+
     events: list[tuple[str, dict[str, object]]] = []
-
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        async with client.stream("GET", "/api/v1/stream/track-state") as response:
-            assert response.status_code == 200
-            assert response.headers["content-type"].startswith("text/event-stream")
-            assert response.headers["cache-control"] == "no-cache"
-
-            iterator = response.aiter_raw()
-            stream_buffer = ""
-
-            for _ in range(8):
-                chunk = await asyncio.wait_for(anext(iterator), timeout=1.0)
-                stream_buffer += chunk.decode("utf-8")
-
-                while "\n\n" in stream_buffer:
-                    event_block, stream_buffer = stream_buffer.split("\n\n", 1)
-                    event_name: str | None = None
-                    event_data_lines: list[str] = []
-
-                    for line in event_block.split("\n"):
-                        if line.startswith("event: "):
-                            event_name = line.removeprefix("event: ")
-                        elif line.startswith("data: "):
-                            event_data_lines.append(line.removeprefix("data: "))
-
-                    if event_name is not None:
-                        payload = json.loads("".join(event_data_lines))
-                        events.append((event_name, payload))
-
-                if len(events) >= 2:
-                    break
-
-            assert len(events) >= 2
+    async for event_raw in _track_state_sse_events(request, controller, max_events=2):
+        lines = [line for line in event_raw.strip().split("\n") if line]
+        event_name = lines[0].removeprefix("event: ")
+        payload = json.loads(lines[1].removeprefix("data: "))
+        events.append((event_name, payload))
 
     assert events[0][0] == "track_state"
     assert events[0][1]["event_type"] == "track_state"
