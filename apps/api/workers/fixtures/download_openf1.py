@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import logging
 from dataclasses import asdict, dataclass
@@ -94,6 +95,21 @@ OPENF1_BASE_URL = "https://api.openf1.org"
 REQUEST_TIMEOUT_SECONDS = 30.0
 MAX_RETRIES = 3
 DEFAULT_DECIMATION_SAMPLE_RATE_HZ = 1
+EVENT_SCHEMA_VERSION = 1
+
+EVENT_TOPIC_PRIORITY: dict[str, int] = {
+    "raw.openf1.sessions.v1": 10,
+    "raw.openf1.drivers.v1": 20,
+    "raw.openf1.weather.v1": 30,
+    "raw.openf1.laps.v1": 40,
+    "raw.openf1.intervals.v1": 50,
+    "raw.openf1.position.v1": 60,
+    "raw.openf1.stints.v1": 70,
+    "raw.openf1.pit.v1": 80,
+    "raw.openf1.race_control.v1": 90,
+    "raw.openf1.location.v1": 100,
+    "raw.openf1.car_data.v1": 110,
+}
 
 
 @dataclass(frozen=True)
@@ -137,6 +153,38 @@ class DriverEndpointResult:
     @property
     def ok(self) -> bool:
         return self.error is None
+
+
+@dataclass(frozen=True)
+class ReplayEvent:
+    event_id: str
+    fixture_id: str
+    source: str
+    topic: str
+    event_type: str
+    session_key: int | None
+    meeting_key: int | None
+    driver_number: int | None
+    occurred_at: str | None
+    ingested_at: str | None
+    payload: dict[str, Any]
+    schema_version: int
+
+    def as_serializable(self) -> dict[str, Any]:
+        return {
+            "event_id": self.event_id,
+            "fixture_id": self.fixture_id,
+            "source": self.source,
+            "topic": self.topic,
+            "event_type": self.event_type,
+            "session_key": self.session_key,
+            "meeting_key": self.meeting_key,
+            "driver_number": self.driver_number,
+            "occurred_at": self.occurred_at,
+            "ingested_at": self.ingested_at,
+            "payload": self.payload,
+            "schema_version": self.schema_version,
+        }
 
 
 async def _fetch_with_retry(
@@ -431,6 +479,154 @@ def _build_summary(
     return summary
 
 
+def _stable_payload_hash(payload: dict[str, Any]) -> str:
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _extract_occurred_at(payload: dict[str, Any]) -> str | None:
+    for key in ("date", "date_start"):
+        value = payload.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _build_event_id(
+    fixture_id: str,
+    event_type: str,
+    occurred_at: str | None,
+    driver_number: int | None,
+    payload: dict[str, Any],
+) -> str:
+    payload_hash = _stable_payload_hash(payload)
+    ts_component = occurred_at or "missing-date"
+    driver_component = "none" if driver_number is None else str(driver_number)
+    raw = "|".join((fixture_id, event_type, ts_component, driver_component, payload_hash))
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return f"evt_{digest}"
+
+
+def _build_replay_event(
+    fixture_id: str,
+    endpoint: str,
+    payload: dict[str, Any],
+    *,
+    driver_number_hint: int | None = None,
+) -> ReplayEvent:
+    topic = f"raw.openf1.{endpoint}.v1"
+    occurred_at = _extract_occurred_at(payload)
+
+    session_key = payload.get("session_key")
+    if not isinstance(session_key, int):
+        session_key = None
+
+    meeting_key = payload.get("meeting_key")
+    if not isinstance(meeting_key, int):
+        meeting_key = None
+
+    driver_number = payload.get("driver_number")
+    if not isinstance(driver_number, int):
+        driver_number = driver_number_hint if isinstance(driver_number_hint, int) else None
+
+    event_id = _build_event_id(
+        fixture_id,
+        endpoint,
+        occurred_at,
+        driver_number,
+        payload,
+    )
+
+    return ReplayEvent(
+        event_id=event_id,
+        fixture_id=fixture_id,
+        source="openf1.rest",
+        topic=topic,
+        event_type=endpoint,
+        session_key=session_key,
+        meeting_key=meeting_key,
+        driver_number=driver_number,
+        occurred_at=occurred_at,
+        # Deterministic for fixture replay: preserve temporal anchor when available.
+        ingested_at=occurred_at,
+        payload=payload,
+        schema_version=EVENT_SCHEMA_VERSION,
+    )
+
+
+def _parse_raw_record_file_name(path: Path) -> tuple[str, int | None] | None:
+    name = path.name
+    if not name.endswith(".json"):
+        return None
+
+    stem = name[:-5]
+    if ".driver_" in stem:
+        endpoint, raw_driver = stem.split(".driver_", maxsplit=1)
+        if raw_driver.isdigit():
+            return endpoint, int(raw_driver)
+        return endpoint, None
+
+    return stem, None
+
+
+def normalize_raw_records_to_events(fixture_id: str, output_dir: Path) -> list[ReplayEvent]:
+    """Convert raw fixture files into deterministic replay events.
+
+    Fallback ordering rule for records without parseable timestamps:
+    they are sorted after all timestamped events, then by topic priority,
+    then by deterministic event_id.
+    """
+    raw_dir = output_dir / "raw"
+    if not raw_dir.exists():
+        raise FileNotFoundError(f"Raw fixture directory not found: {raw_dir}")
+
+    events: list[ReplayEvent] = []
+    for path in sorted(raw_dir.glob("*.json"), key=lambda p: p.name):
+        parsed = _parse_raw_record_file_name(path)
+        if parsed is None:
+            continue
+
+        endpoint, driver_number_hint = parsed
+        raw_payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(raw_payload, list):
+            raise ValueError(f"Expected list payload in {path}, got {type(raw_payload).__name__}")
+
+        for row in raw_payload:
+            if not isinstance(row, dict):
+                raise ValueError(f"Expected object records in {path}")
+            events.append(
+                _build_replay_event(
+                    fixture_id,
+                    endpoint,
+                    row,
+                    driver_number_hint=driver_number_hint,
+                )
+            )
+
+    def _sort_key(event: ReplayEvent) -> tuple[int, float, int, str]:
+        ts = _parse_openf1_timestamp(event.occurred_at)
+        missing = 1 if ts is None else 0
+        ts_value = 0.0 if ts is None else ts
+        topic_priority = EVENT_TOPIC_PRIORITY.get(event.topic, 999)
+        return (missing, ts_value, topic_priority, event.event_id)
+
+    events.sort(key=_sort_key)
+    return events
+
+
+def _write_normalized_events(output_dir: Path, events: list[ReplayEvent]) -> None:
+    normalized_dir = output_dir / "normalized"
+    normalized_dir.mkdir(parents=True, exist_ok=True)
+    dest = normalized_dir / "events.ndjson"
+
+    with dest.open("w", encoding="utf-8", newline="\n") as handle:
+        for event in events:
+            handle.write(json.dumps(event.as_serializable(), sort_keys=True, separators=(",", ":")))
+            handle.write("\n")
+
+    logger.info("Wrote %s (%d events)", dest, len(events))
+
+
 def _write_summary(output_dir: Path, summary: dict[str, Any]) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     dest = output_dir / "summary.json"
@@ -628,6 +824,9 @@ async def _run_async(args: argparse.Namespace) -> int:
 
     summary = _build_summary(args.fixture_id, session, results, driver_results)
     _write_summary(output_dir, summary)
+
+    normalized_events = normalize_raw_records_to_events(args.fixture_id, output_dir)
+    _write_normalized_events(output_dir, normalized_events)
 
     print(json.dumps(summary, indent=2))
     return 0

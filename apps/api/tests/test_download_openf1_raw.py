@@ -11,19 +11,24 @@ import pytest
 
 from workers.fixtures import download_openf1
 from workers.fixtures.download_openf1 import (
+    EVENT_SCHEMA_VERSION,
     DriverEndpointResult,
     EndpointResult,
     LOW_FREQUENCY_ENDPOINTS,
     MANDATORY_ENDPOINTS,
+    ReplayEvent,
     SessionRef,
+    _build_replay_event,
     _build_summary,
     _decimate_timestamped_records,
     _download_high_frequency,
     _download_low_frequency,
     _fetch_with_retry,
+    _write_normalized_events,
     _write_driver_raw_files,
     _write_raw_files,
     _write_summary,
+    normalize_raw_records_to_events,
 )
 
 
@@ -432,6 +437,107 @@ def test_write_summary_creates_file(tmp_path: Path) -> None:
     dest = tmp_path / "summary.json"
     assert dest.exists()
     assert json.loads(dest.read_text()) == summary
+
+
+# ---------------------------------------------------------------------------
+# Normalization to replay events
+# ---------------------------------------------------------------------------
+
+def test_build_replay_event_has_typed_envelope_and_deterministic_id() -> None:
+    payload = {
+        "date": "2023-03-05T15:00:00.000Z",
+        "driver_number": 1,
+        "session_key": 9149,
+        "meeting_key": 238,
+        "speed": 301,
+    }
+
+    first = _build_replay_event("bahrain-2023-race", "car_data", payload)
+    second = _build_replay_event("bahrain-2023-race", "car_data", dict(payload))
+
+    assert isinstance(first, ReplayEvent)
+    assert first.event_id == second.event_id
+    assert first.fixture_id == "bahrain-2023-race"
+    assert first.source == "openf1.rest"
+    assert first.topic == "raw.openf1.car_data.v1"
+    assert first.event_type == "car_data"
+    assert first.session_key == 9149
+    assert first.meeting_key == 238
+    assert first.driver_number == 1
+    assert first.occurred_at == "2023-03-05T15:00:00.000Z"
+    assert first.ingested_at == "2023-03-05T15:00:00.000Z"
+    assert first.payload == payload
+    assert first.schema_version == EVENT_SCHEMA_VERSION
+
+
+def test_normalize_raw_records_to_events_stable_sorting_and_missing_date_fallback(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir(parents=True)
+
+    # Same timestamp, different topics -> weather should sort before location by topic priority.
+    (raw_dir / "weather.json").write_text(
+        json.dumps([
+            {"date": "2023-03-05T15:00:01.000Z", "track_temperature": 35.0},
+        ]),
+        encoding="utf-8",
+    )
+    (raw_dir / "location.driver_1.json").write_text(
+        json.dumps([
+            {"date": "2023-03-05T15:00:01.000Z", "x": 10.0, "y": 2.0},
+        ]),
+        encoding="utf-8",
+    )
+
+    # Missing date should be ordered after timestamped events.
+    (raw_dir / "drivers.json").write_text(
+        json.dumps([
+            {"driver_number": 1, "full_name": "Driver One"},
+        ]),
+        encoding="utf-8",
+    )
+
+    events = normalize_raw_records_to_events("bahrain-2023-race", tmp_path)
+
+    assert len(events) == 3
+    assert [e.topic for e in events] == [
+        "raw.openf1.weather.v1",
+        "raw.openf1.location.v1",
+        "raw.openf1.drivers.v1",
+    ]
+    assert events[2].occurred_at is None
+
+
+def test_normalization_writes_byte_identical_ndjson_on_repeat(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir(parents=True)
+
+    (raw_dir / "car_data.driver_1.json").write_text(
+        json.dumps(
+            [
+                {"date": "2023-03-05T15:00:01.100Z", "speed": 300, "driver_number": 1},
+                {"date": "2023-03-05T15:00:00.900Z", "speed": 299, "driver_number": 1},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (raw_dir / "weather.json").write_text(
+        json.dumps(
+            [
+                {"date": "2023-03-05T15:00:00.900Z", "track_temperature": 33.8},
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    first_events = normalize_raw_records_to_events("bahrain-2023-race", tmp_path)
+    _write_normalized_events(tmp_path, first_events)
+    first_bytes = (tmp_path / "normalized" / "events.ndjson").read_bytes()
+
+    second_events = normalize_raw_records_to_events("bahrain-2023-race", tmp_path)
+    _write_normalized_events(tmp_path, second_events)
+    second_bytes = (tmp_path / "normalized" / "events.ndjson").read_bytes()
+
+    assert first_bytes == second_bytes
 
 
 # ---------------------------------------------------------------------------
