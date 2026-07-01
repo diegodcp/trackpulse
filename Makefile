@@ -19,4 +19,4 @@ test:
 	@echo "TODO: run unit and integration tests"
 
 e2e:
-	@echo "TODO: run end-to-end tests"
+	cd apps/web && npm run test:e2e

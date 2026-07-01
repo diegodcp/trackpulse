@@ -1,0 +1,293 @@
+{
+  "circuitKey": "sample-trackpulse-circuit",
+  "circuitName": "TrackPulse Sample Circuit",
+  "version": "1.0.0",
+  "coordinateSystem": "normalized",
+  "width": 1000,
+  "height": 600,
+  "centerline": [
+    {
+      "x": 120,
+      "y": 300
+    },
+    {
+      "x": 180,
+      "y": 170
+    },
+    {
+      "x": 350,
+      "y": 100
+    },
+    {
+      "x": 560,
+      "y": 130
+    },
+    {
+      "x": 780,
+      "y": 220
+    },
+    {
+      "x": 850,
+      "y": 360
+    },
+    {
+      "x": 720,
+      "y": 490
+    },
+    {
+      "x": 480,
+      "y": 520
+    },
+    {
+      "x": 260,
+      "y": 460
+    },
+    {
+      "x": 120,
+      "y": 300
+    }
+  ],
+  "segments": [
+    {
+      "segmentId": "s01",
+      "label": "Start/Finish",
+      "sector": 1,
+      "type": "straight",
+      "path": [
+        {
+          "x": 120,
+          "y": 300
+        },
+        {
+          "x": 180,
+          "y": 170
+        }
+      ],
+      "sStartPct": 0,
+      "sEndPct": 8,
+      "dominantDirectionDeg": 335
+    },
+    {
+      "segmentId": "s02",
+      "label": "T1 Braking",
+      "sector": 1,
+      "type": "braking",
+      "path": [
+        {
+          "x": 180,
+          "y": 170
+        },
+        {
+          "x": 245,
+          "y": 125
+        }
+      ],
+      "sStartPct": 8,
+      "sEndPct": 16,
+      "dominantDirectionDeg": 310,
+      "cornerId": "T1"
+    },
+    {
+      "segmentId": "s03",
+      "label": "T1 Exit",
+      "sector": 1,
+      "type": "traction_exit",
+      "path": [
+        {
+          "x": 245,
+          "y": 125
+        },
+        {
+          "x": 350,
+          "y": 100
+        }
+      ],
+      "sStartPct": 16,
+      "sEndPct": 24,
+      "dominantDirectionDeg": 284,
+      "cornerId": "T1"
+    },
+    {
+      "segmentId": "s04",
+      "label": "T2 Fast",
+      "sector": 1,
+      "type": "fast_corner",
+      "path": [
+        {
+          "x": 350,
+          "y": 100
+        },
+        {
+          "x": 560,
+          "y": 130
+        }
+      ],
+      "sStartPct": 24,
+      "sEndPct": 34,
+      "dominantDirectionDeg": 98,
+      "cornerId": "T2"
+    },
+    {
+      "segmentId": "s05",
+      "label": "Back Straight",
+      "sector": 2,
+      "type": "straight",
+      "path": [
+        {
+          "x": 560,
+          "y": 130
+        },
+        {
+          "x": 700,
+          "y": 175
+        },
+        {
+          "x": 780,
+          "y": 220
+        }
+      ],
+      "sStartPct": 34,
+      "sEndPct": 47,
+      "dominantDirectionDeg": 112
+    },
+    {
+      "segmentId": "s06",
+      "label": "T3 Braking",
+      "sector": 2,
+      "type": "braking",
+      "path": [
+        {
+          "x": 780,
+          "y": 220
+        },
+        {
+          "x": 835,
+          "y": 315
+        }
+      ],
+      "sStartPct": 47,
+      "sEndPct": 56,
+      "dominantDirectionDeg": 150,
+      "cornerId": "T3"
+    },
+    {
+      "segmentId": "s07",
+      "label": "T3 Slow",
+      "sector": 2,
+      "type": "slow_corner",
+      "path": [
+        {
+          "x": 835,
+          "y": 315
+        },
+        {
+          "x": 850,
+          "y": 360
+        }
+      ],
+      "sStartPct": 56,
+      "sEndPct": 61,
+      "dominantDirectionDeg": 165,
+      "cornerId": "T3"
+    },
+    {
+      "segmentId": "s08",
+      "label": "T4 Exit",
+      "sector": 2,
+      "type": "traction_exit",
+      "path": [
+        {
+          "x": 850,
+          "y": 360
+        },
+        {
+          "x": 720,
+          "y": 490
+        }
+      ],
+      "sStartPct": 61,
+      "sEndPct": 72,
+      "dominantDirectionDeg": 225,
+      "cornerId": "T4"
+    },
+    {
+      "segmentId": "s09",
+      "label": "S3 Sweep",
+      "sector": 3,
+      "type": "medium_corner",
+      "path": [
+        {
+          "x": 720,
+          "y": 490
+        },
+        {
+          "x": 480,
+          "y": 520
+        }
+      ],
+      "sStartPct": 72,
+      "sEndPct": 82,
+      "dominantDirectionDeg": 263,
+      "cornerId": "T5"
+    },
+    {
+      "segmentId": "s10",
+      "label": "T6 Fast",
+      "sector": 3,
+      "type": "fast_corner",
+      "path": [
+        {
+          "x": 480,
+          "y": 520
+        },
+        {
+          "x": 260,
+          "y": 460
+        }
+      ],
+      "sStartPct": 82,
+      "sEndPct": 91,
+      "dominantDirectionDeg": 254,
+      "cornerId": "T6"
+    },
+    {
+      "segmentId": "s11",
+      "label": "Final Traction",
+      "sector": 3,
+      "type": "traction_exit",
+      "path": [
+        {
+          "x": 260,
+          "y": 460
+        },
+        {
+          "x": 190,
+          "y": 380
+        }
+      ],
+      "sStartPct": 91,
+      "sEndPct": 96,
+      "dominantDirectionDeg": 319,
+      "cornerId": "T7"
+    },
+    {
+      "segmentId": "s12",
+      "label": "Back to Finish",
+      "sector": 3,
+      "type": "straight",
+      "path": [
+        {
+          "x": 190,
+          "y": 380
+        },
+        {
+          "x": 120,
+          "y": 300
+        }
+      ],
+      "sStartPct": 96,
+      "sEndPct": 100,
+      "dominantDirectionDeg": 325
+    }
+  ]
+}
