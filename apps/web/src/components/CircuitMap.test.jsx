@@ -196,6 +196,96 @@ describe('TP-BH-0012 Bahrain circuit map', () => {
     expect(screen.getByText('Traffic Truth: derived')).toBeInTheDocument();
   });
 
+  it('renders corner evolution overlay when layer is active', () => {
+    render(
+      <CircuitMap
+        circuit={bahrainCircuit}
+        activeLayer="Corner Evolution"
+        segmentStates={[
+          {
+            segment_id: 'bh-s01',
+            direction_deg: 162,
+            measured: {
+              wind_direction_deg: 310,
+              wind_speed_ms: 2.7,
+              truth_label: 'measured'
+            },
+            derived: {
+              wind_relative_angle_deg: 148,
+              wind_class: 'crosswind_right',
+              wind_strength_score: 27,
+              truth_label: 'derived'
+            },
+            inferred: {
+              evolution: 'improving',
+              avg_speed_delta_kmh: 1.25,
+              confidence: 0.82,
+              truth_label: 'inferred'
+            }
+          }
+        ]}
+      />
+    );
+
+    expect(screen.getByLabelText('Corner evolution layer (inferred)')).toBeInTheDocument();
+    const overlayPath = document.querySelector('[data-segment-id="bh-s01"]');
+    expect(overlayPath).toHaveAttribute('data-evolution-direction', 'improving');
+  });
+
+  it('uses neutral corner evolution state when inferred data is missing', () => {
+    render(
+      <CircuitMap
+        circuit={bahrainCircuit}
+        activeLayer="Corner Evolution"
+        segmentStates={[]}
+      />
+    );
+
+    const overlayPath = document.querySelector('[data-segment-id="bh-s01"]');
+    expect(overlayPath).toHaveAttribute('data-evolution-direction', 'insufficient_data');
+  });
+
+  it('shows corner evolution inferred fields in segment tooltip', async () => {
+    const user = userEvent.setup();
+    render(
+      <CircuitMap
+        circuit={bahrainCircuit}
+        activeLayer="Corner Evolution"
+        segmentStates={[
+          {
+            segment_id: 'bh-s01',
+            direction_deg: 162,
+            measured: {
+              wind_direction_deg: 310,
+              wind_speed_ms: 2.7,
+              truth_label: 'measured'
+            },
+            derived: {
+              wind_relative_angle_deg: 148,
+              wind_class: 'crosswind_right',
+              wind_strength_score: 27,
+              truth_label: 'derived'
+            },
+            inferred: {
+              evolution: 'worsening',
+              avg_speed_delta_kmh: -0.8,
+              confidence: 0.35,
+              truth_label: 'inferred'
+            }
+          }
+        ]}
+      />
+    );
+
+    const startFinishSegment = screen.getByLabelText(/Start\/Finish Straight segment/);
+    await user.hover(startFinishSegment);
+
+    expect(screen.getByText('Evolution (Inferred): worsening')).toBeInTheDocument();
+    expect(screen.getByText('Speed Delta (Inferred): -0.8 km/h')).toBeInTheDocument();
+    expect(screen.getByText('Confidence (Inferred): 35%')).toBeInTheDocument();
+    expect(screen.getByText('Truth Label: Inferred')).toBeInTheDocument();
+  });
+
   it('prefers backend segment wind projection values when available', async () => {
     const user = userEvent.setup();
     render(

@@ -81,6 +81,11 @@
   opacity: 0.6;
 }
 
+.segment.layer-corner-evolution {
+  color: #a3a3a3;
+  opacity: 0.32;
+}
+
 .segment.layer-wind {
   color: #3498db;
   opacity: 0.6;
@@ -120,6 +125,14 @@
 /* Wind overlay arrows */
 .wind-overlay {
   opacity: 0.9;
+}
+
+.corner-evolution-overlay {
+  mix-blend-mode: screen;
+}
+
+.corner-evolution-path {
+  pointer-events: none;
 }
 
 .wind-arrow {

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { CarMarkerLayer } from './CarMarkerLayer';
+import { CornerEvolutionLayer, getCornerEvolutionState } from './CornerEvolutionLayer';
 import '../styles/circuit-map.css';
 
 function normalizeAngleDeg(angleDeg) {
@@ -53,6 +54,27 @@ function getTrafficStroke(score) {
   const hue = 44 - intensity * 36;
   const lightness = 66 - intensity * 24;
   return `hsl(${hue} 94% ${lightness}%)`;
+}
+
+function formatEvolutionDirection(value) {
+  return value.replace(/_/g, ' ');
+}
+
+function formatSpeedDelta(value) {
+  if (value == null) {
+    return '--';
+  }
+
+  const rounded = Number(value.toFixed(1));
+  return `${rounded > 0 ? '+' : ''}${rounded.toFixed(1)} km/h`;
+}
+
+function formatConfidencePercent(value) {
+  if (value == null) {
+    return '--';
+  }
+
+  return `${Math.round(value * 100)}%`;
 }
 
 function createWindArrows(width, height, windDirectionDeg) {
@@ -200,6 +222,12 @@ export function CircuitMap({
           );
         })}
 
+        <CornerEvolutionLayer
+          activeLayer={activeLayer}
+          segments={segments}
+          segmentStateById={segmentStateById}
+        />
+
         {/* Wind layer overlay */}
         {showWindOverlay && (
           <g className="wind-overlay" aria-label="Wind layer arrows (derived)">
@@ -221,12 +249,17 @@ export function CircuitMap({
 
         {/* Tooltip */}
         {hoveredSegment && (
+          (() => {
+            const hoveredSegmentState = segmentStateById.get(hoveredSegment.segmentId);
+            const cornerEvolutionState = getCornerEvolutionState(hoveredSegmentState);
+
+            return (
           <g className="tooltip" transform={`translate(${tooltipPos.x}, ${tooltipPos.y})`}>
             <rect
               x="-70"
               y="0"
               width="140"
-              height="176"
+              height="250"
               rx="4"
               className="tooltip-box"
             />
@@ -257,7 +290,21 @@ export function CircuitMap({
             <text x="0" y="166" className="tooltip-info" textAnchor="middle">
               Traffic Truth: {segmentStateById.get(hoveredSegment.segmentId)?.derived?.traffic_truth_label ?? 'derived'}
             </text>
+            <text x="0" y="184" className="tooltip-info" textAnchor="middle">
+              Evolution (Inferred): {formatEvolutionDirection(cornerEvolutionState.evolutionDirection)}
+            </text>
+            <text x="0" y="202" className="tooltip-info" textAnchor="middle">
+              Speed Delta (Inferred): {formatSpeedDelta(cornerEvolutionState.speedDeltaKmh)}
+            </text>
+            <text x="0" y="220" className="tooltip-info" textAnchor="middle">
+              Confidence (Inferred): {formatConfidencePercent(cornerEvolutionState.confidence)}
+            </text>
+            <text x="0" y="238" className="tooltip-info" textAnchor="middle">
+              Truth Label: {cornerEvolutionState.truthLabel}
+            </text>
           </g>
+            );
+          })()
         )}
       </svg>
     </div>

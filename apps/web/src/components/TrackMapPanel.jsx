@@ -279,6 +279,11 @@ export function TrackMapPanel({ activeLayer }) {
           Traffic density overlay is <TruthLabelBadge label="derived" /> from segment occupancy and adjacency. This is not a dirty-air precision model.
         </p>
       )}
+      {activeLayer === 'Corner Evolution' && (
+        <p className="track-map-precision-note" data-testid="corner-evolution-inferred-note">
+          Corner evolution overlay is <TruthLabelBadge label="inferred" /> from replay segment speed deltas. Missing samples are shown as neutral.
+        </p>
+      )}
       <div className="replay-controls" aria-label="Fixture replay controls">
         <p className="replay-label">Fixture replay</p>
         <div className="replay-controls-row">

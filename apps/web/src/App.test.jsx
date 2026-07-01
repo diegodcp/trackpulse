@@ -113,6 +113,17 @@ describe('TP-BH-0012 Bahrain circuit map', () => {
     expect(screen.getByText(/Traffic density overlay is/i)).toBeInTheDocument();
     expect(within(screen.getByTestId('traffic-derived-note')).getByText('Derived')).toBeInTheDocument();
   });
+
+  it('shows inferred corner evolution label when corner evolution layer is active', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: 'Corner Evolution' }));
+
+    expect(screen.getByText('Active Layer: Corner Evolution')).toBeInTheDocument();
+    expect(screen.getByText(/Corner evolution overlay is/i)).toBeInTheDocument();
+    expect(within(screen.getByTestId('corner-evolution-inferred-note')).getByText('Inferred')).toBeInTheDocument();
+  });
 });
 
 describe('TP-BH-0013 Track snapshot connection', () => {

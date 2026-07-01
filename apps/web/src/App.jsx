@@ -10,6 +10,7 @@ import { mockInsights } from './data/mockInsights';
 const LAYERS = [
   'Track Temp',
   'Grip',
+  'Corner Evolution',
   'Wind',
   'Traffic',
   'Dirty',
