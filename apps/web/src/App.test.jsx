@@ -38,12 +38,20 @@ describe('TP-FE-01 UI shell', () => {
   });
 });
 
-describe('TP-FE-02 Synthetic circuit map', () => {
+describe('TP-BH-0012 Bahrain circuit map', () => {
   it('renders circuit map with expected segment count', () => {
     render(<App />);
 
-    const circuitMapSvg = screen.getByRole('img', { name: /Circuit map with 12 segments/ });
+    const circuitMapSvg = screen.getByRole('img', { name: /Circuit map with 16 segments/ });
     expect(circuitMapSvg).toBeInTheDocument();
+  });
+
+  it('shows stylized precision disclaimer', () => {
+    render(<App />);
+
+    expect(
+      screen.getByText('Stylized Bahrain circuit. Approximate geometry only; no racing-line precision is claimed.')
+    ).toBeInTheDocument();
   });
 
   it('displays tooltip on segment hover', async () => {

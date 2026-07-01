@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CircuitMap } from './CircuitMap';
-import circuitData from '../data/circuit-fixture.json';
+import bahrainCircuit from '../fixtures/bahrainCircuit';
 import { useLatestWeatherQuery } from '../data/weatherLatest';
 import {
   fetchReplayFixtures,
@@ -60,8 +60,7 @@ export function TrackMapPanel({ activeLayer }) {
   const weatherQuery = useLatestWeatherQuery();
 
   useEffect(() => {
-    // Simulate loading the circuit fixture
-    setCircuit(circuitData);
+    setCircuit(bahrainCircuit);
     setIsLoading(false);
   }, []);
 
@@ -191,6 +190,9 @@ export function TrackMapPanel({ activeLayer }) {
         <h2>Track Map</h2>
         <p>Active Layer: {activeLayer}</p>
       </header>
+      <p className="track-map-precision-note" data-testid="track-map-precision-note">
+        Stylized Bahrain circuit. Approximate geometry only; no racing-line precision is claimed.
+      </p>
       <div className="replay-controls" aria-label="Fixture replay controls">
         <p className="replay-label">Fixture replay</p>
         <div className="replay-controls-row">

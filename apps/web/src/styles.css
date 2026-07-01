@@ -169,6 +169,12 @@ main {
   font-size: 0.9rem;
 }
 
+.track-map-precision-note {
+  margin: 0.45rem 0 0.65rem;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+}
+
 .replay-controls {
   margin: 0.5rem 0 0.9rem;
   padding: 0.7rem;

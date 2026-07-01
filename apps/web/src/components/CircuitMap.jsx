@@ -205,7 +205,7 @@ export function CircuitMap({
               x="-70"
               y="0"
               width="140"
-              height="86"
+              height="122"
               rx="4"
               className="tooltip-box"
             />
@@ -213,12 +213,18 @@ export function CircuitMap({
               {hoveredSegment.label}
             </text>
             <text x="0" y="38" className="tooltip-info" textAnchor="middle">
-              Sector {hoveredSegment.sector}
+              Segment ID: {hoveredSegment.segmentId}
             </text>
             <text x="0" y="58" className="tooltip-info" textAnchor="middle">
-              {hoveredSegment.type.replace(/_/g, ' ')}
+              Sector {hoveredSegment.sector}
             </text>
             <text x="0" y="76" className="tooltip-info" textAnchor="middle">
+              Type: {hoveredSegment.type.replace(/_/g, ' ')}
+            </text>
+            <text x="0" y="94" className="tooltip-info" textAnchor="middle">
+              Truth Label: Inferred (placeholder)
+            </text>
+            <text x="0" y="112" className="tooltip-info" textAnchor="middle">
               Wind (Derived): {formatWindClass(buildWindProjection(hoveredSegment.dominantDirectionDeg, windDirectionDeg, windSpeedMs).windClass)}
             </text>
           </g>

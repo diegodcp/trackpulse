@@ -2,46 +2,48 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { CircuitMap } from './CircuitMap';
-import circuitFixture from '../data/circuit-fixture.json';
+import bahrainCircuit from '../fixtures/bahrainCircuit';
 
-describe('TP-FE-02 Synthetic circuit map', () => {
+describe('TP-BH-0012 Bahrain circuit map', () => {
   it('renders expected segment count', () => {
-    render(<CircuitMap circuit={circuitFixture} activeLayer="Track Temp" />);
+    render(<CircuitMap circuit={bahrainCircuit} activeLayer="Track Temp" />);
 
     const segmentButtons = screen.getAllByRole('button');
-    expect(segmentButtons).toHaveLength(12);
+    expect(segmentButtons).toHaveLength(16);
   });
 
   it('renders circuit SVG with correct dimensions', () => {
-    render(<CircuitMap circuit={circuitFixture} activeLayer="Track Temp" />);
+    render(<CircuitMap circuit={bahrainCircuit} activeLayer="Track Temp" />);
 
-    const svg = screen.getByRole('img', { name: /Circuit map with 12 segments/ });
+    const svg = screen.getByRole('img', { name: /Circuit map with 16 segments/ });
     expect(svg).toBeInTheDocument();
-    expect(svg).toHaveAttribute('viewBox', '0 0 1000 600');
+    expect(svg).toHaveAttribute('viewBox', '0 0 1200 700');
   });
 
   it('displays tooltip on hover', async () => {
     const user = userEvent.setup();
-    render(<CircuitMap circuit={circuitFixture} activeLayer="Track Temp" />);
+    render(<CircuitMap circuit={bahrainCircuit} activeLayer="Track Temp" />);
 
-    const startFinishSegment = screen.getByLabelText(/Start\/Finish segment/);
+    const startFinishSegment = screen.getByLabelText(/Start\/Finish Straight segment/);
 
     await user.hover(startFinishSegment);
 
-    expect(screen.getByText('Start/Finish')).toBeInTheDocument();
+    expect(screen.getByText('Start/Finish Straight')).toBeInTheDocument();
+    expect(screen.getByText('Segment ID: bh-s01')).toBeInTheDocument();
     expect(screen.getByText('Sector 1')).toBeInTheDocument();
-    expect(screen.getByText('straight')).toBeInTheDocument();
+    expect(screen.getByText('Type: straight')).toBeInTheDocument();
+    expect(screen.getByText('Truth Label: Inferred (placeholder)')).toBeInTheDocument();
   });
 
   it('applies active layer class to segments', () => {
     const { rerender } = render(
-      <CircuitMap circuit={circuitFixture} activeLayer="Track Temp" />
+      <CircuitMap circuit={bahrainCircuit} activeLayer="Track Temp" />
     );
 
     let segments = screen.getAllByRole('button');
     expect(segments[0]).toHaveClass('layer-track-temp');
 
-    rerender(<CircuitMap circuit={circuitFixture} activeLayer="Grip" />);
+    rerender(<CircuitMap circuit={bahrainCircuit} activeLayer="Grip" />);
 
     segments = screen.getAllByRole('button');
     expect(segments[0]).toHaveClass('layer-grip');
@@ -50,7 +52,7 @@ describe('TP-FE-02 Synthetic circuit map', () => {
   it('renders wind arrows only when wind layer is active', () => {
     const { rerender } = render(
       <CircuitMap
-        circuit={circuitFixture}
+        circuit={bahrainCircuit}
         activeLayer="Track Temp"
         windDirectionDeg={310}
         windSpeedMs={2.7}
@@ -61,7 +63,7 @@ describe('TP-FE-02 Synthetic circuit map', () => {
 
     rerender(
       <CircuitMap
-        circuit={circuitFixture}
+        circuit={bahrainCircuit}
         activeLayer="Wind"
         windDirectionDeg={310}
         windSpeedMs={2.7}
@@ -79,17 +81,17 @@ describe('TP-FE-02 Synthetic circuit map', () => {
   });
 
   it('segment labels contain sector and type information', () => {
-    render(<CircuitMap circuit={circuitFixture} activeLayer="Track Temp" />);
+    render(<CircuitMap circuit={bahrainCircuit} activeLayer="Track Temp" />);
 
-    const t1Segment = screen.getByLabelText(/T1 Braking segment in sector 1/);
+    const t1Segment = screen.getByLabelText(/T1 Braking Zone segment in sector 1/);
     expect(t1Segment).toBeInTheDocument();
   });
 
   it('segments are keyboard accessible', async () => {
     const user = userEvent.setup();
-    render(<CircuitMap circuit={circuitFixture} activeLayer="Track Temp" />);
+    render(<CircuitMap circuit={bahrainCircuit} activeLayer="Track Temp" />);
 
-    const startFinishSegment = screen.getByLabelText(/Start\/Finish segment/);
+    const startFinishSegment = screen.getByLabelText(/Start\/Finish Straight segment/);
 
     await user.tab();
 
@@ -98,39 +100,39 @@ describe('TP-FE-02 Synthetic circuit map', () => {
 
   it('updates tooltip on keyboard focus', async () => {
     const user = userEvent.setup();
-    render(<CircuitMap circuit={circuitFixture} activeLayer="Track Temp" />);
+    render(<CircuitMap circuit={bahrainCircuit} activeLayer="Track Temp" />);
 
-    const t1Segment = screen.getByLabelText(/T1 Braking segment/);
+    const t1Segment = screen.getByLabelText(/T1 Braking Zone segment/);
 
     await user.tab();
     await user.tab(); // Move to T1
 
-    expect(screen.getByText('T1 Braking')).toBeInTheDocument();
+    expect(screen.getByText('T1 Braking Zone')).toBeInTheDocument();
   });
 
   it('shows derived wind class in segment tooltip', async () => {
     const user = userEvent.setup();
     render(
       <CircuitMap
-        circuit={circuitFixture}
+        circuit={bahrainCircuit}
         activeLayer="Wind"
         windDirectionDeg={310}
         windSpeedMs={2.7}
       />
     );
 
-    const startFinishSegment = screen.getByLabelText(/Start\/Finish segment/);
+    const startFinishSegment = screen.getByLabelText(/Start\/Finish Straight segment/);
 
     await user.hover(startFinishSegment);
 
-    expect(screen.getByText('Wind (Derived): headwind')).toBeInTheDocument();
+    expect(screen.getByText('Wind (Derived): crosswind right')).toBeInTheDocument();
   });
 
   it('segment paths render correctly', () => {
-    render(<CircuitMap circuit={circuitFixture} activeLayer="Track Temp" />);
+    render(<CircuitMap circuit={bahrainCircuit} activeLayer="Track Temp" />);
 
     const svgPaths = document.querySelectorAll('.segment');
-    expect(svgPaths).toHaveLength(12);
+    expect(svgPaths).toHaveLength(16);
 
     // Verify each segment has a path element
     svgPaths.forEach((path) => {
