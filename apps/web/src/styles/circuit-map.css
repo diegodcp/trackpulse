@@ -117,6 +117,52 @@
   opacity: 0.95 !important;
 }
 
+/* Wind overlay arrows */
+.wind-overlay {
+  opacity: 0.9;
+}
+
+.wind-arrow {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: windPulse 1.6s ease-in-out infinite;
+}
+
+.wind-arrow-shaft,
+.wind-arrow-head {
+  stroke: #8dd8ff;
+  stroke-width: 1.6;
+  fill: none;
+}
+
+@keyframes windPulse {
+  0% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+    stroke-width: 2;
+  }
+  70% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0.35;
+    stroke-width: 1.6;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .segment {
+    transition: none;
+  }
+
+  .wind-arrow {
+    animation: none;
+    opacity: 1;
+  }
+}
+
 /* Tooltip styling */
 .tooltip {
   pointer-events: none;
@@ -140,13 +186,6 @@
   fill: #bdc3c7;
   font-size: 10px;
   text-transform: capitalize;
-}
-
-/* Accessibility improvements */
-@media (prefers-reduced-motion: reduce) {
-  .segment {
-    transition: none;
-  }
 }
 
 /* Error state */

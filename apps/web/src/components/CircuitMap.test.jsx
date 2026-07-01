@@ -47,6 +47,30 @@ describe('TP-FE-02 Synthetic circuit map', () => {
     expect(segments[0]).toHaveClass('layer-grip');
   });
 
+  it('renders wind arrows only when wind layer is active', () => {
+    const { rerender } = render(
+      <CircuitMap
+        circuit={circuitFixture}
+        activeLayer="Track Temp"
+        windDirectionDeg={310}
+        windSpeedMs={2.7}
+      />
+    );
+
+    expect(screen.queryByLabelText('Wind layer arrows (derived)')).not.toBeInTheDocument();
+
+    rerender(
+      <CircuitMap
+        circuit={circuitFixture}
+        activeLayer="Wind"
+        windDirectionDeg={310}
+        windSpeedMs={2.7}
+      />
+    );
+
+    expect(screen.getByLabelText('Wind layer arrows (derived)')).toBeInTheDocument();
+  });
+
   it('shows error when circuit data is missing', () => {
     render(<CircuitMap circuit={null} activeLayer="Track Temp" />);
 
@@ -82,6 +106,24 @@ describe('TP-FE-02 Synthetic circuit map', () => {
     await user.tab(); // Move to T1
 
     expect(screen.getByText('T1 Braking')).toBeInTheDocument();
+  });
+
+  it('shows derived wind class in segment tooltip', async () => {
+    const user = userEvent.setup();
+    render(
+      <CircuitMap
+        circuit={circuitFixture}
+        activeLayer="Wind"
+        windDirectionDeg={310}
+        windSpeedMs={2.7}
+      />
+    );
+
+    const startFinishSegment = screen.getByLabelText(/Start\/Finish segment/);
+
+    await user.hover(startFinishSegment);
+
+    expect(screen.getByText('Wind (Derived): headwind')).toBeInTheDocument();
   });
 
   it('segment paths render correctly', () => {

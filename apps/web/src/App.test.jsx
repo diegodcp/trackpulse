@@ -77,6 +77,18 @@ describe('TP-FE-02 Synthetic circuit map', () => {
     expect(segmentElements.length).toBeGreaterThan(0);
   });
 
+  it('toggles wind layer overlay arrows', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(screen.queryByLabelText('Wind layer arrows (derived)')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Wind' }));
+
+    expect(screen.getByText('Active Layer: Wind')).toBeInTheDocument();
+    expect(screen.getByLabelText('Wind layer arrows (derived)')).toBeInTheDocument();
+  });
+
   it('track map header displays active layer', () => {
     render(<App />);
 

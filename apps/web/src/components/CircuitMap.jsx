@@ -1,7 +1,69 @@
 import { useState } from 'react';
 import '../styles/circuit-map.css';
 
-export function CircuitMap({ circuit, activeLayer }) {
+function normalizeAngleDeg(angleDeg) {
+  return ((angleDeg + 180) % 360) - 180;
+}
+
+function getDerivedWindClass(relativeAngleDeg) {
+  if (relativeAngleDeg === null || Number.isNaN(relativeAngleDeg)) {
+    return 'unknown';
+  }
+
+  const absoluteAngle = Math.abs(relativeAngleDeg);
+  if (absoluteAngle <= 30) {
+    return 'headwind';
+  }
+  if (absoluteAngle >= 150) {
+    return 'tailwind';
+  }
+  if (relativeAngleDeg < 0) {
+    return 'crosswind_left';
+  }
+  return 'crosswind_right';
+}
+
+function buildWindProjection(segmentDirectionDeg, windDirectionDeg, windSpeedMs) {
+  if (segmentDirectionDeg == null || windDirectionDeg == null || windSpeedMs == null) {
+    return { windClass: 'unknown', relativeAngleDeg: null };
+  }
+
+  // Match backend convention: meteorological wind direction (from north, clockwise).
+  const relativeAngleDeg = Number(normalizeAngleDeg(windDirectionDeg - segmentDirectionDeg).toFixed(1));
+  return {
+    windClass: getDerivedWindClass(relativeAngleDeg),
+    relativeAngleDeg
+  };
+}
+
+function formatWindClass(windClass) {
+  return windClass.replace(/_/g, ' ');
+}
+
+function createWindArrows(width, height, windDirectionDeg) {
+  const columns = 6;
+  const rows = 4;
+  const xStep = width / (columns + 1);
+  const yStep = height / (rows + 1);
+
+  return Array.from({ length: columns * rows }, (_, index) => {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const x = Math.round((column + 1) * xStep);
+    const y = Math.round((row + 1) * yStep);
+    const delay = `${(index % 6) * 0.15}s`;
+
+    return {
+      id: `wind-arrow-${index}`,
+      x,
+      y,
+      delay,
+      rotateDeg: windDirectionDeg ?? 0
+    };
+  });
+}
+
+export function CircuitMap({ circuit, activeLayer, windDirectionDeg = null, windSpeedMs = null }) {
   const [hoveredSegment, setHoveredSegment] = useState(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
@@ -14,6 +76,8 @@ export function CircuitMap({ circuit, activeLayer }) {
   }
 
   const { width, height, centerline, segments } = circuit;
+  const windArrows = createWindArrows(width, height, windDirectionDeg);
+  const showWindOverlay = activeLayer === 'Wind';
   const pathData = centerline
     .map((point, idx) => `${idx === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
     .join(' ');
@@ -64,6 +128,7 @@ export function CircuitMap({ circuit, activeLayer }) {
 
         {/* Segment overlays */}
         {segments.map((segment) => {
+          const windProjection = buildWindProjection(segment.dominantDirectionDeg, windDirectionDeg, windSpeedMs);
           const segmentPath = segment.path
             .map((point, idx) => `${idx === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
             .join(' ');
@@ -84,11 +149,29 @@ export function CircuitMap({ circuit, activeLayer }) {
                 onFocus={(e) => handleSegmentFocus(segment, e)}
                 role="button"
                 tabIndex="0"
-                aria-label={`${segment.label} segment in sector ${segment.sector}`}
+                aria-label={`${segment.label} segment in sector ${segment.sector}; derived wind class ${formatWindClass(windProjection.windClass)}`}
+                data-derived-wind-class={windProjection.windClass}
               />
             </g>
           );
         })}
+
+        {/* Wind layer overlay */}
+        {showWindOverlay && (
+          <g className="wind-overlay" aria-label="Wind layer arrows (derived)">
+            {windArrows.map((arrow) => (
+              <g
+                key={arrow.id}
+                transform={`translate(${arrow.x}, ${arrow.y}) rotate(${arrow.rotateDeg})`}
+              >
+                <g className="wind-arrow" style={{ animationDelay: arrow.delay }}>
+                  <line x1="-10" y1="0" x2="8" y2="0" className="wind-arrow-shaft" />
+                  <polyline points="3,-4 8,0 3,4" className="wind-arrow-head" />
+                </g>
+              </g>
+            ))}
+          </g>
+        )}
 
         {/* Tooltip */}
         {hoveredSegment && (
@@ -97,7 +180,7 @@ export function CircuitMap({ circuit, activeLayer }) {
               x="-70"
               y="0"
               width="140"
-              height="70"
+              height="86"
               rx="4"
               className="tooltip-box"
             />
@@ -109,6 +192,9 @@ export function CircuitMap({ circuit, activeLayer }) {
             </text>
             <text x="0" y="58" className="tooltip-info" textAnchor="middle">
               {hoveredSegment.type.replace(/_/g, ' ')}
+            </text>
+            <text x="0" y="76" className="tooltip-info" textAnchor="middle">
+              Wind (Derived): {formatWindClass(buildWindProjection(hoveredSegment.dominantDirectionDeg, windDirectionDeg, windSpeedMs).windClass)}
             </text>
           </g>
         )}
