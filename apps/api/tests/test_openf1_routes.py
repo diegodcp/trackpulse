@@ -102,6 +102,7 @@ async def test_openf1_proxy_endpoints_return_fixture_envelopes(
         session_response = await client.get("/api/v1/sessions/latest")
         weather_response = await client.get("/api/v1/openf1/weather/latest")
         location_response = await client.get("/api/v1/openf1/location/sample")
+        track_state_response = await client.get("/api/v1/track-state/latest")
 
     assert session_response.status_code == 200
     assert session_response.json()["data"]["session_key"] == 9149
@@ -115,6 +116,36 @@ async def test_openf1_proxy_endpoints_return_fixture_envelopes(
     assert len(location_response.json()["data"]) == 2
     assert location_response.json()["data"][0]["driver_number"] == 1
     assert location_response.json()["meta"]["request_id"]
+
+    assert track_state_response.status_code == 200
+    track_state_payload = track_state_response.json()
+    assert track_state_payload["meta"]["request_id"]
+
+    segments = track_state_payload["data"]
+    assert len(segments) == 12
+
+    first_segment = segments[0]
+    assert first_segment["segmentId"] == "s01"
+    assert first_segment["sessionKey"] == "fixture"
+    assert first_segment["updatedAt"] == "2023-03-05T15:01:00+00:00"
+
+    # TP-LAYER-01 truth buckets: measured from weather, derived placeholders, inferred confidence placeholder.
+    assert first_segment["measured"] == {
+        "trackTemperatureC": pytest.approx(43.2),
+        "airTemperatureC": pytest.approx(29.4),
+        "windSpeedMs": pytest.approx(2.7),
+        "windDirectionDeg": 192,
+        "rainfall": False,
+    }
+    assert 0.0 <= first_segment["derived"]["trafficScore"] <= 100.0
+    assert first_segment["derived"]["windClass"] in {
+        "headwind",
+        "tailwind",
+        "crosswind_left",
+        "crosswind_right",
+        "unknown",
+    }
+    assert first_segment["inferred"]["confidence"] == pytest.approx(0.5)
 
 
 @pytest.mark.asyncio

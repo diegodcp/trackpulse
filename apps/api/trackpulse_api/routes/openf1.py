@@ -42,6 +42,51 @@ class ApiErrorResponse(BaseModel):
     meta: ResponseMeta
 
 
+class TrackSegmentMeasuredState(BaseModel):
+    trackTemperatureC: float | None = None
+    airTemperatureC: float | None = None
+    windSpeedMs: float | None = None
+    windDirectionDeg: int | None = None
+    rainfall: bool | None = None
+
+
+class TrackSegmentDerivedState(BaseModel):
+    trafficScore: float | None = None
+    windRelativeAngleDeg: float | None = None
+    windClass: str | None = None
+
+
+class TrackSegmentInferredState(BaseModel):
+    confidence: float | None = None
+
+
+class TrackSegmentStateResponse(BaseModel):
+    segmentId: str
+    sessionKey: int | str
+    updatedAt: str
+    measured: TrackSegmentMeasuredState
+    derived: TrackSegmentDerivedState
+    inferred: TrackSegmentInferredState
+
+
+# Assumption: until a backend-owned track-map contract lands, TP-LAYER-01 uses the
+# existing 12-segment fixture circuit IDs and headings to provide stable payloads.
+FIXTURE_SEGMENTS: tuple[tuple[str, float], ...] = (
+    ("s01", 335.0),
+    ("s02", 310.0),
+    ("s03", 284.0),
+    ("s04", 98.0),
+    ("s05", 112.0),
+    ("s06", 150.0),
+    ("s07", 165.0),
+    ("s08", 225.0),
+    ("s09", 263.0),
+    ("s10", 254.0),
+    ("s11", 319.0),
+    ("s12", 325.0),
+)
+
+
 def _build_client(settings: AppSettings) -> OpenF1HistoricalClient:
     return OpenF1HistoricalClient(
         base_url=settings.openf1_base_url,
@@ -85,6 +130,57 @@ def _sort_weather_records(records: list[OpenF1Weather]) -> list[OpenF1Weather]:
 
 def _sort_location_records(records: list[OpenF1Location]) -> list[OpenF1Location]:
     return sorted(records, key=lambda record: (record.date, record.driver_number))
+
+
+def _normalize_angle(angle: float) -> float:
+    return ((angle + 180.0) % 360.0) - 180.0
+
+
+def _wind_class(relative_angle: float | None) -> str:
+    if relative_angle is None:
+        return "unknown"
+
+    absolute_angle = abs(relative_angle)
+    if absolute_angle <= 30.0:
+        return "headwind"
+    if absolute_angle >= 150.0:
+        return "tailwind"
+    if relative_angle < 0:
+        return "crosswind_left"
+    return "crosswind_right"
+
+
+def _build_track_state_from_weather(weather: OpenF1Weather) -> list[TrackSegmentStateResponse]:
+    segment_states: list[TrackSegmentStateResponse] = []
+    wind_direction = float(weather.wind_direction) if weather.wind_direction is not None else None
+
+    for index, (segment_id, segment_heading_deg) in enumerate(FIXTURE_SEGMENTS):
+        wind_relative_angle: float | None = None
+        if wind_direction is not None:
+            wind_relative_angle = round(_normalize_angle(wind_direction - segment_heading_deg), 1)
+
+        segment_states.append(
+            TrackSegmentStateResponse(
+                segmentId=segment_id,
+                sessionKey="fixture",
+                updatedAt=weather.date.isoformat(),
+                measured=TrackSegmentMeasuredState(
+                    trackTemperatureC=weather.track_temperature,
+                    airTemperatureC=weather.air_temperature,
+                    windSpeedMs=weather.wind_speed,
+                    windDirectionDeg=weather.wind_direction,
+                    rainfall=weather.rainfall,
+                ),
+                derived=TrackSegmentDerivedState(
+                    trafficScore=float(min(100, 15 + (index * 7))),
+                    windRelativeAngleDeg=wind_relative_angle,
+                    windClass=_wind_class(wind_relative_angle),
+                ),
+                inferred=TrackSegmentInferredState(confidence=0.5),
+            )
+        )
+
+    return segment_states
 
 
 def _map_openf1_exception(exc: Exception) -> JSONResponse:
@@ -139,3 +235,21 @@ async def location_sample(settings: AppSettings = Depends(get_app_settings)) -> 
         return _map_openf1_exception(exc)
 
     return _success(records[:10])
+
+
+@router.get("/track-state/latest", response_model=ApiResponse[list[TrackSegmentStateResponse]])
+async def latest_track_state(
+    settings: AppSettings = Depends(get_app_settings),
+) -> ApiResponse[list[TrackSegmentStateResponse]] | JSONResponse:
+    client = _build_client(settings)
+
+    try:
+        session = await _discover_seed_session(client, settings)
+        records = _sort_weather_records(await client.get_weather(session_key=session.session_key))
+    except Exception as exc:  # noqa: BLE001
+        return _map_openf1_exception(exc)
+
+    if not records:
+        return _error(404, "openf1_weather_not_found", "No OpenF1 weather records were available.")
+
+    return _success(_build_track_state_from_weather(records[-1]))
