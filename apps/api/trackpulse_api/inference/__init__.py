@@ -15,6 +15,7 @@ from .grip import (
     score_grip_evolution,
 )
 from .location import CircuitPoint, SegmentAssignment, TrackSegmentPath, assign_nearest_segment
+from .rain import RainInfluenceInput, RainInfluenceResult, score_rain_influence
 from .tyre import (
     TYRE_STRESS_HIGH,
     TYRE_STRESS_LOW,
@@ -35,6 +36,8 @@ __all__ = [
     "DirtyZoneSegmentProbability",
     "GripEvolutionResult",
     "GripSample",
+    "RainInfluenceInput",
+    "RainInfluenceResult",
     "CircuitPoint",
     "SegmentAssignment",
     "TrackSegmentPath",
@@ -49,6 +52,7 @@ __all__ = [
     "evaluate_clean_sample",
     "infer_dirty_zone_probability",
     "score_grip_evolution",
+    "score_rain_influence",
     "score_tyre_stress",
     "assign_nearest_segment",
     "project_wind_projection",
