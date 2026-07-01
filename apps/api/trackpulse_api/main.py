@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .middleware import RequestContextMiddleware
 from .observability import configure_logging
 from .routes.health import router as health_router
+from .routes.openf1 import router as openf1_router
 from .routes.version import router as version_router
 from .settings import AppSettings, get_settings
 
@@ -25,6 +26,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     )
 
     app.include_router(health_router)
+    app.include_router(openf1_router)
     app.include_router(version_router)
     return app
 

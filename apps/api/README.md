@@ -1,12 +1,15 @@
 # TrackPulse API
 
-FastAPI backend for TrackPulse health, readiness, and version endpoints.
+FastAPI backend for TrackPulse health endpoints and OpenF1 proxy routes.
 
 ## Endpoints
 
 - `GET /health/live`
 - `GET /health/ready`
 - `GET /version`
+- `GET /api/v1/sessions/latest`
+- `GET /api/v1/openf1/weather/latest`
+- `GET /api/v1/openf1/location/sample`
 
 ## Development
 

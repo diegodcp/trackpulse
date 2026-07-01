@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends
 
 from ..observability import request_id_context
-from ..settings import AppSettings, get_settings
+from ..settings import AppSettings, get_app_settings
 
 router = APIRouter(tags=["health"])
 
 
 @router.get("/health/live")
-def live_health(settings: AppSettings = Depends(get_settings)) -> dict[str, object]:
+def live_health(settings: AppSettings = Depends(get_app_settings)) -> dict[str, object]:
     return {
         "status": "ok",
         "app_name": settings.app_name,
@@ -17,7 +17,7 @@ def live_health(settings: AppSettings = Depends(get_settings)) -> dict[str, obje
 
 
 @router.get("/health/ready")
-def ready_health(settings: AppSettings = Depends(get_settings)) -> dict[str, object]:
+def ready_health(settings: AppSettings = Depends(get_app_settings)) -> dict[str, object]:
     return {
         "status": "ready",
         "ready": True,

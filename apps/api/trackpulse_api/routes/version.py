@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends
 
-from ..settings import AppSettings, get_settings
+from ..settings import AppSettings, get_app_settings
 
 router = APIRouter(tags=["version"])
 
 
 @router.get("/version")
-def version(settings: AppSettings = Depends(get_settings)) -> dict[str, object]:
+def version(settings: AppSettings = Depends(get_app_settings)) -> dict[str, object]:
     return {
         "app_name": settings.app_name,
         "app_version": settings.app_version,
