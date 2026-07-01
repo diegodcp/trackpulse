@@ -108,6 +108,17 @@ export const replayStateFixture = {
   ]
 };
 
+export const replayStatusFixture = {
+  fixture_id: 'bahrain-2023-race',
+  status: 'paused',
+  speed_multiplier: 1,
+  cursor: 0,
+  total_points: 2,
+  progress_pct: 50,
+  replay_time: '2023-03-05T15:00:00+00:00',
+  message: 'Latest replay status'
+};
+
 export const server = setupServer(
   http.get('/api/v1/openf1/weather/latest', () => HttpResponse.json({ data: weatherFixture })),
   http.get('/api/v1/insights/latest', () => HttpResponse.json(latestInsightsFixture)),
@@ -119,12 +130,36 @@ export const server = setupServer(
           fixture_id: 'bahrain-2023-race',
           display_name: 'Bahrain 2023 Race',
           source_mode: 'fixture',
-          supported_speeds: [1, 5, 10]
+          supported_speeds: [1, 5, 20, 100]
         }
       ]
     })
   ),
   http.get('/api/v1/replay/state', () => HttpResponse.json(replayStateFixture)),
+  http.get('/api/v1/events/replay-status', () => HttpResponse.json(replayStatusFixture)),
+  http.post('/api/v1/replay/:fixtureId/start', async ({ request }) => {
+    const body = await request.json();
+    return HttpResponse.json({
+      ...replayStatusFixture,
+      status: 'running',
+      speed_multiplier: body.speed_multiplier ?? 1,
+      message: 'Replay started'
+    });
+  }),
+  http.post('/api/v1/replay/:fixtureId/pause', () =>
+    HttpResponse.json({
+      ...replayStatusFixture,
+      status: 'paused',
+      message: 'Replay paused'
+    })
+  ),
+  http.post('/api/v1/replay/:fixtureId/stop', () =>
+    HttpResponse.json({
+      ...replayStatusFixture,
+      status: 'idle',
+      message: 'Replay stopped'
+    })
+  ),
   http.post('/api/v1/replay/start', async ({ request }) => {
     const body = await request.json();
     return HttpResponse.json({

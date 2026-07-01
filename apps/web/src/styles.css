@@ -222,6 +222,18 @@ main {
   color: var(--ink-soft);
 }
 
+.replay-status-running {
+  color: var(--cyan);
+}
+
+.replay-status-paused {
+  color: var(--accent);
+}
+
+.replay-status-idle {
+  color: var(--ink-soft);
+}
+
 .layer-toggle-buttons {
   display: flex;
   flex-wrap: wrap;

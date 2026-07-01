@@ -201,10 +201,13 @@ describe('TP-BH-0013 Track snapshot connection', () => {
     render(<App />);
 
     expect(await screen.findByLabelText('Fixture replay controls')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
+    expect(screen.getByTestId('replay-start-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('replay-pause-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('replay-stop-btn')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '1x' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '5x' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '10x' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '20x' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '100x' })).toBeInTheDocument();
     expect(screen.getByTestId('replay-scrubber')).toBeInTheDocument();
     expect(screen.getByTestId('replay-time')).toBeInTheDocument();
     expect(screen.getByText('Car markers use measured replay locations but are displayed as approximate positions.')).toBeInTheDocument();

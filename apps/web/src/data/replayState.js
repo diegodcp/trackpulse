@@ -77,3 +77,46 @@ export async function stopReplay() {
   const payload = await decodeJson(response, 'Failed to stop replay');
   return replayStateSchema.parse(payload);
 }
+
+const replayStatusSchema = z.object({
+  fixture_id: z.string(),
+  status: z.string(),
+  speed_multiplier: z.coerce.number(),
+  cursor: z.coerce.number(),
+  total_points: z.coerce.number(),
+  progress_pct: z.coerce.number(),
+  replay_time: z.string().nullable().optional(),
+  message: z.string().optional()
+});
+
+export async function fetchReplayStatus() {
+  const response = await fetch('/api/v1/events/replay-status');
+  const payload = await decodeJson(response, 'Failed to fetch replay status');
+  return replayStatusSchema.parse(payload);
+}
+
+export async function startFixtureReplay(fixtureId, speedMultiplier) {
+  const response = await fetch(`/api/v1/replay/${encodeURIComponent(fixtureId)}/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ speed_multiplier: speedMultiplier })
+  });
+  const payload = await decodeJson(response, 'Failed to start replay');
+  return replayStatusSchema.parse(payload);
+}
+
+export async function pauseFixtureReplay(fixtureId) {
+  const response = await fetch(`/api/v1/replay/${encodeURIComponent(fixtureId)}/pause`, {
+    method: 'POST'
+  });
+  const payload = await decodeJson(response, 'Failed to pause replay');
+  return replayStatusSchema.parse(payload);
+}
+
+export async function stopFixtureReplay(fixtureId) {
+  const response = await fetch(`/api/v1/replay/${encodeURIComponent(fixtureId)}/stop`, {
+    method: 'POST'
+  });
+  const payload = await decodeJson(response, 'Failed to stop replay');
+  return replayStatusSchema.parse(payload);
+}

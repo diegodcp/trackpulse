@@ -1,29 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CircuitMap } from './CircuitMap';
+import { ReplayControls } from './ReplayControls';
 import { TruthLabelBadge } from './TruthLabelBadge';
 import bahrainCircuit from '../fixtures/bahrainCircuit';
 import { useTrackSnapshot } from '../data/trackSnapshot';
 import {
   fetchReplayFixtures,
-  fetchReplayState,
-  startReplay,
-  stopReplay
+  fetchReplayState
 } from '../data/replayState';
-
-const REPLAY_SPEEDS = [1, 5, 10];
-
-function formatReplayTime(value) {
-  if (!value) {
-    return '--';
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.valueOf())) {
-    return '--';
-  }
-
-  return parsed.toISOString();
-}
 
 function clampProgress(value) {
   if (typeof value !== 'number' || Number.isNaN(value)) {
@@ -108,7 +92,7 @@ export function TrackMapPanel({ activeLayer }) {
   const [isLoading, setIsLoading] = useState(true);
   const [replayState, setReplayState] = useState(null);
   const [replayFixtureId, setReplayFixtureId] = useState('bahrain-2023-race');
-  const [selectedSpeed, setSelectedSpeed] = useState(1);
+  const [fixtureDisplayName, setFixtureDisplayName] = useState('');
   const [scrubberCursor, setScrubberCursor] = useState(null);
   const [replayError, setReplayError] = useState('');
   const snapshotQuery = useTrackSnapshot();
@@ -126,12 +110,12 @@ export function TrackMapPanel({ activeLayer }) {
         const fixtures = await fetchReplayFixtures();
         if (!isCancelled && fixtures.length > 0) {
           setReplayFixtureId(fixtures[0].fixture_id);
+          setFixtureDisplayName(fixtures[0].display_name ?? '');
         }
 
         const state = await fetchReplayState();
         if (!isCancelled) {
           setReplayState(state);
-          setSelectedSpeed(state.speed_multiplier || 1);
         }
       } catch {
         if (!isCancelled) {
@@ -166,7 +150,6 @@ export function TrackMapPanel({ activeLayer }) {
   }, [replayState?.status]);
 
   const effectiveCursor = scrubberCursor ?? replayState?.cursor ?? 0;
-  const timelinePoint = replayState?.timeline_points?.[effectiveCursor] ?? replayState?.active_location ?? null;
 
   const replayMarker = useMemo(() => {
     const carMarkers = snapshotQuery.data?.car_markers;
@@ -213,47 +196,6 @@ export function TrackMapPanel({ activeLayer }) {
       .filter(Boolean);
   }, [snapshotQuery.data?.car_markers, replayState?.coordinate_bounds, circuit]);
 
-  const handleToggleReplay = async () => {
-    if (!replayState) {
-      return;
-    }
-
-    try {
-      if (replayState.status === 'running') {
-        const nextState = await stopReplay();
-        setReplayState(nextState);
-        return;
-      }
-
-      setScrubberCursor(null);
-      const nextState = await startReplay({
-        fixtureId: replayFixtureId,
-        speedMultiplier: selectedSpeed
-      });
-      setReplayState(nextState);
-    } catch {
-      setReplayError('Replay action failed. Please try again.');
-    }
-  };
-
-  const handleSpeedChange = async (speed) => {
-    setSelectedSpeed(speed);
-
-    if (!replayState || replayState.status !== 'running') {
-      return;
-    }
-
-    try {
-      const nextState = await startReplay({
-        fixtureId: replayFixtureId,
-        speedMultiplier: speed
-      });
-      setReplayState(nextState);
-    } catch {
-      setReplayError('Unable to update replay speed.');
-    }
-  };
-
   if (isLoading) {
     return (
       <section className="track-map-panel" aria-label="Track map panel">
@@ -284,25 +226,11 @@ export function TrackMapPanel({ activeLayer }) {
           Corner evolution overlay is <TruthLabelBadge label="inferred" /> from replay segment speed deltas. Missing samples are shown as neutral.
         </p>
       )}
-      <div className="replay-controls" aria-label="Fixture replay controls">
-        <p className="replay-label">Fixture replay</p>
-        <div className="replay-controls-row">
-          <button type="button" className="layer-button" onClick={handleToggleReplay}>
-            {replayState?.status === 'running' ? 'Pause' : 'Play'}
-          </button>
-          <div className="replay-speed-group" role="group" aria-label="Replay speed">
-            {REPLAY_SPEEDS.map((speed) => (
-              <button
-                key={speed}
-                type="button"
-                className={`layer-button ${selectedSpeed === speed ? 'is-active' : ''}`}
-                onClick={() => handleSpeedChange(speed)}
-              >
-                {speed}x
-              </button>
-            ))}
-          </div>
-        </div>
+      <ReplayControls
+        fixtureId={replayFixtureId}
+        sessionName={fixtureDisplayName}
+      />
+      <div className="replay-controls">
         <label className="replay-scrubber-label" htmlFor="replay-scrubber">
           Scrubber
         </label>
@@ -316,11 +244,6 @@ export function TrackMapPanel({ activeLayer }) {
           onChange={(event) => setScrubberCursor(Number(event.target.value))}
           disabled={(replayState?.total_points ?? 0) <= 1}
         />
-        <p className="replay-meta">
-          Status: <strong>{replayState?.status ?? 'idle'}</strong>
-          {' | '}
-          Time: <strong data-testid="replay-time">{formatReplayTime(timelinePoint?.occurred_at ?? replayState?.replay_time)}</strong>
-        </p>
         {replayError && <p className="session-status-message session-status-message-error">{replayError}</p>}
       </div>
       <CircuitMap
