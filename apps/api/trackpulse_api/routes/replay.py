@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ..replay.controller import (
@@ -19,6 +21,8 @@ from ..settings import get_app_settings
 from ..state import TrackSnapshot, TrackStateReducer
 
 router = APIRouter(prefix="/api/v1", tags=["replay"])
+
+SSE_STREAM_INTERVAL_SECONDS = 0.25
 
 
 class FixturesResponse(BaseModel):
@@ -167,6 +171,10 @@ def _track_snapshot_from_replay(snapshot: ReplayStateSnapshot) -> TrackSnapshot:
     return reducer.snapshot()
 
 
+def _sse_event(event: str, payload: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, separators=(',', ':'))}\n\n"
+
+
 @router.get("/fixtures", response_model=FixturesResponse)
 async def list_fixtures(
     controller: FixtureReplayController = Depends(_controller),
@@ -245,6 +253,54 @@ async def latest_track_state(
     controller: FixtureReplayController = Depends(_controller),
 ) -> TrackStateLatestResponse:
     return TrackStateLatestResponse(snapshot=_track_snapshot_from_replay(controller.snapshot()))
+
+
+@router.get("/stream/track-state")
+async def stream_track_state(
+    request: Request,
+    controller: FixtureReplayController = Depends(_controller),
+) -> StreamingResponse:
+    async def event_generator():
+        last_snapshot_json: str | None = None
+
+        while True:
+            if await request.is_disconnected():
+                break
+
+            replay_snapshot = controller.snapshot()
+            snapshot = _track_snapshot_from_replay(replay_snapshot)
+            snapshot_json = snapshot.model_dump_json()
+
+            if snapshot_json != last_snapshot_json:
+                last_snapshot_json = snapshot_json
+                yield _sse_event(
+                    "track_state",
+                    {
+                        "snapshot": snapshot.model_dump(mode="json"),
+                        "event_type": "track_state",
+                    },
+                )
+            else:
+                yield _sse_event(
+                    "heartbeat",
+                    {
+                        "fixture_id": replay_snapshot.fixture_id,
+                        "replay_status": replay_snapshot.status,
+                        "event_type": "heartbeat",
+                    },
+                )
+
+            await asyncio.sleep(SSE_STREAM_INTERVAL_SECONDS)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/replay/fixtures", response_model=FixturesResponse)

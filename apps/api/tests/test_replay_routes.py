@@ -213,3 +213,81 @@ async def test_replay_api_invalid_fixture_returns_404_with_clear_error(
 
     assert manifest_response.status_code == 404
     assert manifest_response.json() == {"detail": "Fixture 'not-a-real-fixture' was not found"}
+
+
+@pytest.mark.asyncio
+async def test_track_state_sse_stream_emits_track_state_and_heartbeat_events(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture_root = tmp_path / "bahrain-2023-race"
+    fixtures_dir = fixture_root / "golden"
+    fixtures_dir.mkdir(parents=True)
+
+    _write_fixture(
+        fixtures_dir,
+        "sessions",
+        [
+            {
+                "session_key": 9149,
+                "session_name": "Race",
+                "meeting_key": 1210,
+                "country_name": "Bahrain",
+                "year": 2023,
+                "date_start": "2023-03-05T15:00:00+00:00",
+            }
+        ],
+    )
+    _write_fixture(fixtures_dir, "location", [])
+
+    monkeypatch.setenv("TRACKPULSE_OPENF1_MODE", "fixture")
+    monkeypatch.setenv("TRACKPULSE_OPENF1_FIXTURE_DATA_DIR", str(fixtures_dir))
+
+    app = create_app()
+
+    events: list[tuple[str, dict[str, object]]] = []
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async with client.stream("GET", "/api/v1/stream/track-state") as response:
+            assert response.status_code == 200
+            assert response.headers["content-type"].startswith("text/event-stream")
+            assert response.headers["cache-control"] == "no-cache"
+
+            iterator = response.aiter_raw()
+            stream_buffer = ""
+
+            for _ in range(8):
+                chunk = await asyncio.wait_for(anext(iterator), timeout=1.0)
+                stream_buffer += chunk.decode("utf-8")
+
+                while "\n\n" in stream_buffer:
+                    event_block, stream_buffer = stream_buffer.split("\n\n", 1)
+                    event_name: str | None = None
+                    event_data_lines: list[str] = []
+
+                    for line in event_block.split("\n"):
+                        if line.startswith("event: "):
+                            event_name = line.removeprefix("event: ")
+                        elif line.startswith("data: "):
+                            event_data_lines.append(line.removeprefix("data: "))
+
+                    if event_name is not None:
+                        payload = json.loads("".join(event_data_lines))
+                        events.append((event_name, payload))
+
+                if len(events) >= 2:
+                    break
+
+            assert len(events) >= 2
+
+    assert events[0][0] == "track_state"
+    assert events[0][1]["event_type"] == "track_state"
+    assert isinstance(events[0][1]["snapshot"], dict)
+    assert events[0][1]["snapshot"]["weather"]["available"] is False
+
+    assert events[1][0] == "heartbeat"
+    assert events[1][1] == {
+        "fixture_id": "bahrain-2023-race",
+        "replay_status": "idle",
+        "event_type": "heartbeat",
+    }
