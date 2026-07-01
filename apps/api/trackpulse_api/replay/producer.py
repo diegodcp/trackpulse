@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+import logging
+from typing import Any, Awaitable, Callable, Protocol
+
+from .topics import REPLAY_DEFAULT_EVENT_TOPIC, REPLAY_STATUS_TOPIC
+
+logger = logging.getLogger(__name__)
 
 ReplaySubscriber = Callable[[dict[str, Any]], None | Awaitable[None]]
 StatusSubscriber = Callable[["ReplayStatusUpdate"], None | Awaitable[None]]
@@ -33,6 +39,28 @@ class ReplayStatusUpdate:
     message: str
 
 
+@dataclass(frozen=True)
+class ReplayPublishAck:
+    topic: str
+    partition: int | None
+    offset: int | None
+    status: str
+
+
+class ReplayEventPublisher(Protocol):
+    async def start(self) -> None:
+        ...
+
+    async def publish_event(self, event: dict[str, Any]) -> ReplayPublishAck:
+        ...
+
+    async def publish_status(self, status_update: ReplayStatusUpdate) -> None:
+        ...
+
+    async def close(self) -> None:
+        ...
+
+
 class InMemoryEventBus:
     """Simple in-memory pub/sub bus for replay tests and local integration."""
 
@@ -42,18 +70,28 @@ class InMemoryEventBus:
         self.published_events: list[dict[str, Any]] = []
         self.status_updates: list[ReplayStatusUpdate] = []
 
+    async def start(self) -> None:
+        return None
+
     def subscribe_events(self, subscriber: ReplaySubscriber) -> None:
         self._event_subscribers.append(subscriber)
 
     def subscribe_status(self, subscriber: StatusSubscriber) -> None:
         self._status_subscribers.append(subscriber)
 
-    async def publish_event(self, event: dict[str, Any]) -> None:
+    async def publish_event(self, event: dict[str, Any]) -> ReplayPublishAck:
         self.published_events.append(event)
         for subscriber in self._event_subscribers:
             result = subscriber(event)
             if asyncio.iscoroutine(result):
                 await result
+
+        return ReplayPublishAck(
+            topic=str(event.get("topic") or REPLAY_DEFAULT_EVENT_TOPIC),
+            partition=None,
+            offset=len(self.published_events) - 1,
+            status="memory",
+        )
 
     async def publish_status(self, status_update: ReplayStatusUpdate) -> None:
         self.status_updates.append(status_update)
@@ -61,6 +99,139 @@ class InMemoryEventBus:
             result = subscriber(status_update)
             if asyncio.iscoroutine(result):
                 await result
+
+    async def close(self) -> None:
+        return None
+
+
+class KafkaProducerClient(Protocol):
+    async def send_and_wait(
+        self,
+        topic: str,
+        value: bytes,
+        key: bytes | None = None,
+        headers: list[tuple[str, bytes]] | None = None,
+    ) -> Any:
+        ...
+
+
+class KafkaReplayEventBus:
+    """Publish replay events/status updates to Kafka-compatible brokers."""
+
+    def __init__(
+        self,
+        client: KafkaProducerClient,
+        *,
+        status_topic: str = REPLAY_STATUS_TOPIC,
+    ) -> None:
+        self._client = client
+        self._status_topic = status_topic
+        self._started = False
+
+    async def start(self) -> None:
+        if self._started:
+            return
+
+        start = getattr(self._client, "start", None)
+        if callable(start):
+            await start()
+        self._started = True
+
+    async def publish_event(self, event: dict[str, Any]) -> ReplayPublishAck:
+        topic = str(event.get("topic") or REPLAY_DEFAULT_EVENT_TOPIC)
+        key = _event_key(event)
+        event_type = event.get("event_type")
+        headers = None
+        if isinstance(event_type, str) and event_type:
+            headers = [("event_type", event_type.encode("utf-8"))]
+
+        payload = json.dumps(event, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        metadata = await self._client.send_and_wait(
+            topic=topic,
+            value=payload,
+            key=key,
+            headers=headers,
+        )
+        return ReplayPublishAck(
+            topic=str(getattr(metadata, "topic", topic)),
+            partition=getattr(metadata, "partition", None),
+            offset=getattr(metadata, "offset", None),
+            status="ack",
+        )
+
+    async def publish_status(self, status_update: ReplayStatusUpdate) -> None:
+        payload = {
+            "fixture_id": status_update.fixture_id,
+            "status": status_update.status.value,
+            "speed_multiplier": status_update.speed_multiplier,
+            "published_events": status_update.published_events,
+            "total_events": status_update.total_events,
+            "occurred_at": status_update.occurred_at,
+            "message": status_update.message,
+        }
+        await self._client.send_and_wait(
+            topic=self._status_topic,
+            value=json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"),
+            key=status_update.fixture_id.encode("utf-8"),
+        )
+
+    async def close(self) -> None:
+        stop = getattr(self._client, "stop", None)
+        if callable(stop):
+            await stop()
+        self._started = False
+
+
+def build_replay_event_bus(
+    *,
+    mode: str = "memory",
+    kafka_bootstrap_servers: str = "localhost:9092",
+    kafka_client_id: str = "trackpulse-replay-producer",
+    kafka_acks: str = "all",
+    kafka_status_topic: str = REPLAY_STATUS_TOPIC,
+    kafka_client_factory: Callable[..., KafkaProducerClient] | None = None,
+) -> ReplayEventPublisher:
+    if mode == "memory":
+        return InMemoryEventBus()
+
+    if mode != "kafka":
+        raise ValueError("mode must be either 'memory' or 'kafka'")
+
+    client_factory = kafka_client_factory or _default_aiokafka_client_factory
+    client = client_factory(
+        bootstrap_servers=kafka_bootstrap_servers,
+        client_id=kafka_client_id,
+        acks=kafka_acks,
+    )
+    return KafkaReplayEventBus(client, status_topic=kafka_status_topic)
+
+
+def _default_aiokafka_client_factory(*, bootstrap_servers: str, client_id: str, acks: str) -> KafkaProducerClient:
+    try:
+        aiokafka = importlib.import_module("aiokafka")
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise RuntimeError(
+            "aiokafka is required for Kafka replay producer mode. Install with: pip install aiokafka"
+        ) from exc
+
+    AIOKafkaProducer = getattr(aiokafka, "AIOKafkaProducer")
+    return AIOKafkaProducer(
+        bootstrap_servers=bootstrap_servers,
+        client_id=client_id,
+        acks=acks,
+    )
+
+
+def _event_key(event: dict[str, Any]) -> bytes | None:
+    event_id = event.get("event_id")
+    if isinstance(event_id, str) and event_id:
+        return event_id.encode("utf-8")
+
+    fixture_id = event.get("fixture_id")
+    if isinstance(fixture_id, str) and fixture_id:
+        return fixture_id.encode("utf-8")
+
+    return None
 
 
 class FixtureReplayProducer:
@@ -76,7 +247,7 @@ class FixtureReplayProducer:
         *,
         fixture_id: str,
         events_path: Path,
-        event_bus: InMemoryEventBus,
+        event_bus: ReplayEventPublisher,
         speed_multiplier: int = 1,
         sleep_fn: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
@@ -125,6 +296,7 @@ class FixtureReplayProducer:
         if self._task is not None and not self._task.done():
             return False
 
+        await self.event_bus.start()
         self._events = _load_ndjson_events(self.events_path)
         self._published_events = 0
         self._stop_requested = False
@@ -199,8 +371,16 @@ class FixtureReplayProducer:
                     await self._emit_status(message="Replay stopped", occurred_at=None)
                     return
 
-                await self.event_bus.publish_event(event)
+                publish_ack = await self.event_bus.publish_event(event)
                 self._published_events += 1
+                logger.info(
+                    "Replay publish ack topic=%s partition=%s offset=%s ack_status=%s event_count=%s",
+                    publish_ack.topic,
+                    publish_ack.partition,
+                    publish_ack.offset,
+                    publish_ack.status,
+                    self._published_events,
+                )
                 await self._emit_status(
                     message="Replay event published",
                     occurred_at=event.get("occurred_at"),

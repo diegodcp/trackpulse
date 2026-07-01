@@ -37,6 +37,11 @@ class AppSettings(BaseSettings):
     openf1_seed_year: int = 2023
     openf1_seed_country_name: str = "Bahrain"
     openf1_seed_session_name: str = "Race"
+    replay_producer_mode: Literal["memory", "kafka"] = "memory"
+    replay_kafka_bootstrap_servers: str = "localhost:9092"
+    replay_kafka_client_id: str = "trackpulse-replay-producer"
+    replay_kafka_acks: Literal["all", "0", "1"] = "all"
+    replay_kafka_status_topic: str = "trackpulse.replay.status.v1"
     db_enabled: bool = False
     db_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/trackpulse"
     log_level: str = "INFO"

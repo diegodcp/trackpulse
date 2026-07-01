@@ -49,6 +49,18 @@ services:
     volumes:
       - redpanda-data:/var/lib/redpanda/data
 
+  redpanda-topics:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.3.9
+    container_name: trackpulse-redpanda-topics
+    depends_on:
+      - redpanda
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        rpk cluster health --brokers redpanda:9092;
+        rpk topic create --brokers redpanda:9092 --if-not-exists raw.openf1.weather.v1 raw.openf1.location.v1 raw.openf1.car_data.v1 raw.openf1.laps.v1 raw.openf1.race_control.v1 trackpulse.replay.status.v1 trackpulse.replay.events.v1
+
 volumes:
   postgres-data:
   redis-data:
