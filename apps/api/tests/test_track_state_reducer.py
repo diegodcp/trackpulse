@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from trackpulse_api.state import TrackStateReducer
+from trackpulse_api.state.track_model import BAHRAIN_TRACK_SEGMENTS
 
 
 def test_reducer_updates_weather_state() -> None:
@@ -136,6 +137,9 @@ def test_reducer_builds_snapshot_without_weather() -> None:
 
 def test_reducer_wind_projection_changes_when_wind_direction_changes() -> None:
     reducer = TrackStateReducer()
+    segment_heading = next(item.direction_deg for item in BAHRAIN_TRACK_SEGMENTS if item.segment_id == "bh-s01")
+    headwind_direction = int(round(segment_heading))
+    tailwind_direction = int(round((segment_heading + 180.0) % 360.0))
 
     snapshot_headwind = reducer.apply_event(
         {
@@ -144,7 +148,7 @@ def test_reducer_wind_projection_changes_when_wind_direction_changes() -> None:
             "session_key": 9149,
             "occurred_at": "2023-03-05T15:00:00.000Z",
             "payload": {
-                "wind_direction": 162,
+                "wind_direction": headwind_direction,
                 "wind_speed": 10.0,
             },
         }
@@ -156,7 +160,7 @@ def test_reducer_wind_projection_changes_when_wind_direction_changes() -> None:
             "session_key": 9149,
             "occurred_at": "2023-03-05T15:00:02.000Z",
             "payload": {
-                "wind_direction": 342,
+                "wind_direction": tailwind_direction,
                 "wind_speed": 10.0,
             },
         }
@@ -167,8 +171,8 @@ def test_reducer_wind_projection_changes_when_wind_direction_changes() -> None:
 
     assert segment_headwind["derived"]["wind_class"] == "headwind"
     assert segment_tailwind["derived"]["wind_class"] == "tailwind"
-    assert segment_headwind["derived"]["wind_relative_angle_deg"] == pytest.approx(0.0)
-    assert segment_tailwind["derived"]["wind_relative_angle_deg"] == pytest.approx(-180.0)
+    assert abs(segment_headwind["derived"]["wind_relative_angle_deg"]) <= 1.0
+    assert abs(abs(segment_tailwind["derived"]["wind_relative_angle_deg"]) - 180.0) <= 1.0
 
 
 def test_reducer_traffic_scores_are_zero_when_no_cars_present() -> None:

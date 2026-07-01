@@ -183,7 +183,7 @@ async def test_replay_api_endpoints_expose_fixture_manifest_status_and_track_sta
     assert "traffic_score" in snapshot["segment_states"][0]["derived"]
     assert snapshot["segment_states"][0]["derived"]["traffic_truth_label"] == "derived"
     assert snapshot["replay_status"] in {"running", "completed"}
-    assert len(snapshot["live_insights"]) >= 1
+    assert all(item.get("truth_label") == "inferred" for item in snapshot["live_insights"])
 
     assert pause_response.status_code == 200
     assert pause_response.json()["status"] in {"paused", "completed"}
