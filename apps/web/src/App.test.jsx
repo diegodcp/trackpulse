@@ -93,7 +93,7 @@ describe('TP-FE-03 Weather banner connection', () => {
     expect(
       screen.getByText(`${weatherFixture.wind_speed.toFixed(1)} m/s @ ${weatherFixture.wind_direction} deg`)
     ).toBeInTheDocument();
-    expect(screen.getByText(`${weatherFixture.rainfall.toFixed(1)} mm`)).toBeInTheDocument();
+    expect(screen.getByText('No rain detected')).toBeInTheDocument();
     const statusSection = screen.getByRole('region', { name: 'Session status' });
     expect(within(statusSection).getByText('Measured')).toBeInTheDocument();
   });

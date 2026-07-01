@@ -208,3 +208,18 @@ async def test_openf1_proxy_never_exposes_bearer_token_to_frontend(
     assert response.status_code == 200
     assert "super-secret-token" not in response.text
     assert all("super-secret-token" not in value for value in response.headers.values())
+
+
+@pytest.mark.asyncio
+async def test_openf1_proxy_uses_default_committed_fixture_data() -> None:
+    app = create_app()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/openf1/weather/latest")
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["data"]["session_key"] == 9149
+    assert payload["data"]["track_temperature"] == pytest.approx(43.2)
+    assert payload["data"]["air_temperature"] == pytest.approx(29.4)
+    assert payload["data"]["rainfall"] is False

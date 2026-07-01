@@ -9,7 +9,8 @@ function formatWind(speed, direction) {
 }
 
 function formatRainfall(value) {
-  return `${value.toFixed(1)} mm`;
+  return value ? 'Rain detected' : 'No rain detected'; 
+  //return `${value.toFixed(1)} mm`;
 }
 
 export function SessionStatusBar() {

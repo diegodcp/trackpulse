@@ -6,7 +6,7 @@ const weatherSchema = z.object({
   air_temperature: z.coerce.number(),
   wind_speed: z.coerce.number(),
   wind_direction: z.coerce.number(),
-  rainfall: z.coerce.number()
+  rainfall: z.boolean()
 });
 
 function pickLatestWeatherPayload(payload) {
