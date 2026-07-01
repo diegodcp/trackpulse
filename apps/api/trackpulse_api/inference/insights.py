@@ -2,16 +2,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from hashlib import sha1
 from typing import Any
 
-from .grip import TRACK_EVOLUTION_IMPROVING, TRACK_EVOLUTION_WORSENING
+from pydantic import BaseModel, Field
 
-INSIGHT_CATEGORY_GRIP = "grip"
+HIGH_WIND_SPEED_THRESHOLD_MS = 8.0
+SEGMENT_TREND_CONFIDENCE_THRESHOLD = 0.55
+TRAFFIC_SCORE_THRESHOLD = 20.0
+TRAFFIC_PERSISTENCE_UPDATES = 2
+DIRTY_ZONE_PROBABILITY_THRESHOLD = 0.5
+
 INSIGHT_CATEGORY_TRAFFIC = "traffic"
 INSIGHT_CATEGORY_WIND = "wind"
 INSIGHT_CATEGORY_DIRTY_ZONE = "dirty_zone"
-INSIGHT_CATEGORY_TYRE_STRESS = "tyre_stress"
-INSIGHT_CATEGORY_RAIN = "rain"
+INSIGHT_CATEGORY_SEGMENT_TREND = "segment_trend"
 
 SEVERITY_INFO = "info"
 SEVERITY_WARNING = "warning"
@@ -20,26 +25,30 @@ LABEL_MEASURED = "measured"
 LABEL_DERIVED = "derived"
 LABEL_INFERRED = "inferred"
 
-HIGH_WIND_SPEED_THRESHOLD_MS = 8.0
-GRIP_CONFIDENCE_THRESHOLD = 0.7
-TRAFFIC_SCORE_THRESHOLD = 70.0
-DIRTY_ZONE_PROBABILITY_THRESHOLD = 0.5
-TYRE_STRESS_SCORE_THRESHOLD = 70.0
-RAIN_INFLUENCE_PROBABILITY_THRESHOLD = 0.55
+
+class InsightEvidence(BaseModel):
+    value: Any
+    truth_label: str
 
 
-@dataclass(frozen=True)
-class GripInsightInput:
-    segment_id: str
-    track_evolution: str
+class LiveInsight(BaseModel):
+    insight_id: str
+    category: str
+    severity: str
+    title: str
+    message: str
+    affected_segment_ids: list[str] = Field(default_factory=list)
     confidence: float
-    grip_index: float | None = None
+    evidence: dict[str, InsightEvidence] = Field(default_factory=dict)
+    truth_labels: list[str] = Field(default_factory=list)
+    expires_at: datetime
 
 
 @dataclass(frozen=True)
 class TrafficInsightInput:
     segment_id: str
     traffic_score: float
+    consecutive_updates: int = 1
 
 
 @dataclass(frozen=True)
@@ -48,6 +57,8 @@ class WindInsightInput:
     wind_speed_ms: float | None
     wind_class: str | None
     wind_strength_score: float | None = None
+    is_braking_zone: bool = False
+    is_fast_corner: bool = False
 
 
 @dataclass(frozen=True)
@@ -59,29 +70,19 @@ class DirtyZoneInsightInput:
 
 
 @dataclass(frozen=True)
-class TyreStressInsightInput:
+class SegmentTrendInsightInput:
     segment_id: str
-    stress_score: float
+    avg_speed_delta_kmh: float
     confidence: float
-    stress_level: str | None = None
-
-
-@dataclass(frozen=True)
-class RainInsightInput:
-    segment_ids: tuple[str, ...]
-    probability: float
-    confidence: float
-    measured_rainfall: bool | None = None
+    clean_sample_count: int
 
 
 @dataclass(frozen=True)
 class InsightEngineInput:
-    grip: tuple[GripInsightInput, ...] = ()
     traffic: tuple[TrafficInsightInput, ...] = ()
     wind: tuple[WindInsightInput, ...] = ()
+    segment_trend: tuple[SegmentTrendInsightInput, ...] = ()
     dirty_zone: tuple[DirtyZoneInsightInput, ...] = ()
-    tyre_stress: tuple[TyreStressInsightInput, ...] = ()
-    rain: tuple[RainInsightInput, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -89,11 +90,14 @@ class InsightEngineState:
     last_emitted_at: dict[str, datetime] = field(default_factory=dict)
 
 
-def _evidence_value(value: Any, label: str) -> dict[str, Any]:
-    return {
-        "value": value,
-        "label": label,
-    }
+def _evidence_value(value: Any, label: str) -> InsightEvidence:
+    return InsightEvidence(value=value, truth_label=label)
+
+
+def _deterministic_insight_id(category: str, title: str, segment_ids: tuple[str, ...]) -> str:
+    stable_segments = ",".join(sorted(segment_ids))
+    digest = sha1(f"{category}|{title}|{stable_segments}".encode("utf-8")).hexdigest()
+    return f"li-{digest[:16]}"
 
 
 def _insight_payload(
@@ -104,19 +108,22 @@ def _insight_payload(
     message: str,
     confidence: float,
     segment_ids: tuple[str, ...],
-    evidence: dict[str, Any],
+    evidence: dict[str, InsightEvidence],
     expires_at: datetime,
-) -> dict[str, Any]:
-    return {
-        "category": category,
-        "severity": severity,
-        "title": title,
-        "message": message,
-        "confidence": round(max(0.0, min(1.0, confidence)), 2),
-        "segmentIds": list(segment_ids),
-        "evidence": evidence,
-        "expiresAt": expires_at.isoformat(),
-    }
+) -> LiveInsight:
+    truth_labels = sorted({item.truth_label for item in evidence.values()})
+    return LiveInsight(
+        insight_id=_deterministic_insight_id(category, title, segment_ids),
+        category=category,
+        severity=severity,
+        title=title,
+        message=message,
+        confidence=round(max(0.0, min(1.0, confidence)), 2),
+        affected_segment_ids=list(segment_ids),
+        evidence=evidence,
+        truth_labels=truth_labels,
+        expires_at=expires_at,
+    )
 
 
 def _dedupe_key(category: str, title: str, segment_ids: tuple[str, ...]) -> str:
@@ -139,7 +146,7 @@ def _on_cooldown(
 
 
 def _emit_insight(
-    insights: list[dict[str, Any]],
+    insights: list[LiveInsight],
     *,
     category: str,
     severity: str,
@@ -147,7 +154,7 @@ def _emit_insight(
     message: str,
     confidence: float,
     segment_ids: tuple[str, ...],
-    evidence: dict[str, Any],
+    evidence: dict[str, InsightEvidence],
     now: datetime,
     state: InsightEngineState,
     cooldown_seconds: float,
@@ -179,72 +186,26 @@ def generate_rule_based_insights(
     state: InsightEngineState | None = None,
     cooldown_seconds: float = 90.0,
     ttl_seconds: float = 45.0,
-) -> tuple[list[dict[str, Any]], InsightEngineState]:
-    """Generate TP-INS-01 rule-based insights.
-
-    Assumptions:
-    - high wind is defined as wind_speed_ms >= 8.0 for v1;
-    - wind watch applies when a segment has a known non-unknown wind class;
-    - dedupe is keyed by (category, title, segmentIds) and enforced by cooldown.
-    """
+) -> tuple[list[LiveInsight], InsightEngineState]:
+    """Generate TP-BH-0019 rule-based live insights."""
     engine_state = state or InsightEngineState()
-    insights: list[dict[str, Any]] = []
-
-    for item in insight_input.grip:
-        if item.confidence < GRIP_CONFIDENCE_THRESHOLD:
-            continue
-
-        if item.track_evolution == TRACK_EVOLUTION_IMPROVING:
-            _emit_insight(
-                insights,
-                category=INSIGHT_CATEGORY_GRIP,
-                severity=SEVERITY_INFO,
-                title="Grip improving",
-                message=f"{item.segment_id} is gaining grip from clean samples.",
-                confidence=item.confidence,
-                segment_ids=(item.segment_id,),
-                evidence={
-                    "trackEvolution": _evidence_value(item.track_evolution, LABEL_INFERRED),
-                    "gripIndex": _evidence_value(item.grip_index, LABEL_INFERRED),
-                },
-                now=now,
-                state=engine_state,
-                cooldown_seconds=cooldown_seconds,
-                ttl_seconds=ttl_seconds,
-            )
-        elif item.track_evolution == TRACK_EVOLUTION_WORSENING:
-            _emit_insight(
-                insights,
-                category=INSIGHT_CATEGORY_GRIP,
-                severity=SEVERITY_WARNING,
-                title="Grip worsening",
-                message=f"{item.segment_id} grip is dropping versus recent clean samples.",
-                confidence=item.confidence,
-                segment_ids=(item.segment_id,),
-                evidence={
-                    "trackEvolution": _evidence_value(item.track_evolution, LABEL_INFERRED),
-                    "gripIndex": _evidence_value(item.grip_index, LABEL_INFERRED),
-                },
-                now=now,
-                state=engine_state,
-                cooldown_seconds=cooldown_seconds,
-                ttl_seconds=ttl_seconds,
-            )
+    insights: list[LiveInsight] = []
 
     for item in insight_input.traffic:
-        if item.traffic_score < TRAFFIC_SCORE_THRESHOLD:
+        if item.traffic_score < TRAFFIC_SCORE_THRESHOLD or item.consecutive_updates < TRAFFIC_PERSISTENCE_UPDATES:
             continue
 
         _emit_insight(
             insights,
             category=INSIGHT_CATEGORY_TRAFFIC,
             severity=SEVERITY_WARNING,
-            title="Traffic warning",
-            message=f"Traffic pressure is high in {item.segment_id}.",
-            confidence=0.9,
+            title="Traffic cluster persists",
+            message=f"Cars are continuing to bunch through {item.segment_id}, so pace there could stay compromised.",
+            confidence=min(0.95, round(0.55 + (item.traffic_score / 100.0) * 0.4, 2)),
             segment_ids=(item.segment_id,),
             evidence={
-                "trafficScore": _evidence_value(round(item.traffic_score, 1), LABEL_DERIVED),
+                "traffic_score": _evidence_value(round(item.traffic_score, 1), LABEL_DERIVED),
+                "consecutive_updates": _evidence_value(item.consecutive_updates, LABEL_DERIVED),
             },
             now=now,
             state=engine_state,
@@ -255,21 +216,53 @@ def generate_rule_based_insights(
     for item in insight_input.wind:
         has_wind_class = item.wind_class not in (None, "", "unknown")
         is_high_wind = item.wind_speed_ms is not None and item.wind_speed_ms >= HIGH_WIND_SPEED_THRESHOLD_MS
-        if not (has_wind_class and is_high_wind):
+        targets_sensitive_corner = item.is_braking_zone or item.is_fast_corner
+        if not (has_wind_class and is_high_wind and targets_sensitive_corner):
             continue
+
+        if item.is_braking_zone and item.is_fast_corner:
+            segment_context = "braking-heavy fast corner"
+        elif item.is_braking_zone:
+            segment_context = "braking zone"
+        else:
+            segment_context = "fast corner"
 
         _emit_insight(
             insights,
             category=INSIGHT_CATEGORY_WIND,
             severity=SEVERITY_WARNING,
-            title="Wind watch",
-            message=f"Strong {item.wind_class} detected in {item.segment_id}.",
+            title="Strong wind at corner entry",
+            message=f"Strong {item.wind_class} could affect the {segment_context} around {item.segment_id}.",
             confidence=0.85,
             segment_ids=(item.segment_id,),
             evidence={
-                "windSpeedMs": _evidence_value(item.wind_speed_ms, LABEL_MEASURED),
-                "windClass": _evidence_value(item.wind_class, LABEL_DERIVED),
-                "windStrengthScore": _evidence_value(item.wind_strength_score, LABEL_DERIVED),
+                "wind_speed_ms": _evidence_value(item.wind_speed_ms, LABEL_MEASURED),
+                "wind_class": _evidence_value(item.wind_class, LABEL_DERIVED),
+                "wind_strength_score": _evidence_value(item.wind_strength_score, LABEL_DERIVED),
+            },
+            now=now,
+            state=engine_state,
+            cooldown_seconds=cooldown_seconds,
+            ttl_seconds=ttl_seconds,
+        )
+
+    for item in insight_input.segment_trend:
+        if item.confidence < SEGMENT_TREND_CONFIDENCE_THRESHOLD:
+            continue
+        if item.avg_speed_delta_kmh <= 0.0:
+            continue
+
+        _emit_insight(
+            insights,
+            category=INSIGHT_CATEGORY_SEGMENT_TREND,
+            severity=SEVERITY_INFO,
+            title="Segment trending faster",
+            message=f"{item.segment_id} is trending faster from recent clean speed samples.",
+            confidence=item.confidence,
+            segment_ids=(item.segment_id,),
+            evidence={
+                "avg_speed_delta_kmh": _evidence_value(round(item.avg_speed_delta_kmh, 2), LABEL_INFERRED),
+                "clean_sample_count": _evidence_value(item.clean_sample_count, LABEL_INFERRED),
             },
             now=now,
             state=engine_state,
@@ -285,57 +278,13 @@ def generate_rule_based_insights(
             insights,
             category=INSIGHT_CATEGORY_DIRTY_ZONE,
             severity=SEVERITY_WARNING,
-            title="Dirty-zone watch",
-            message="Surface contamination risk is elevated in the highlighted segment(s).",
+            title="Dirty-zone placeholder",
+            message="Race-control context suggests a possible contamination zone in the highlighted segment(s).",
             confidence=item.confidence,
             segment_ids=item.segment_ids,
             evidence={
-                "dirtyZoneProbability": _evidence_value(round(item.probability, 2), LABEL_INFERRED),
+                "dirty_zone_probability": _evidence_value(round(item.probability, 2), LABEL_INFERRED),
                 "trigger": _evidence_value(item.trigger, LABEL_MEASURED),
-            },
-            now=now,
-            state=engine_state,
-            cooldown_seconds=cooldown_seconds,
-            ttl_seconds=ttl_seconds,
-        )
-
-    for item in insight_input.tyre_stress:
-        if item.stress_score < TYRE_STRESS_SCORE_THRESHOLD:
-            continue
-
-        _emit_insight(
-            insights,
-            category=INSIGHT_CATEGORY_TYRE_STRESS,
-            severity=SEVERITY_WARNING,
-            title="Tyre stress",
-            message=f"Tyre stress is elevated in {item.segment_id}.",
-            confidence=item.confidence,
-            segment_ids=(item.segment_id,),
-            evidence={
-                "tyreStressScore": _evidence_value(round(item.stress_score, 1), LABEL_INFERRED),
-                "stressLevel": _evidence_value(item.stress_level, LABEL_INFERRED),
-            },
-            now=now,
-            state=engine_state,
-            cooldown_seconds=cooldown_seconds,
-            ttl_seconds=ttl_seconds,
-        )
-
-    for item in insight_input.rain:
-        if item.probability < RAIN_INFLUENCE_PROBABILITY_THRESHOLD:
-            continue
-
-        _emit_insight(
-            insights,
-            category=INSIGHT_CATEGORY_RAIN,
-            severity=SEVERITY_WARNING,
-            title="Rain influence",
-            message="Rain influence is likely affecting pace consistency.",
-            confidence=item.confidence,
-            segment_ids=item.segment_ids,
-            evidence={
-                "rainInfluenceProbability": _evidence_value(round(item.probability, 2), LABEL_INFERRED),
-                "measuredRainfall": _evidence_value(item.measured_rainfall, LABEL_MEASURED),
             },
             now=now,
             state=engine_state,

@@ -129,6 +129,7 @@ def test_reducer_builds_snapshot_without_weather() -> None:
     assert [marker.driver_number for marker in snapshot.car_markers] == [1, 11]
     assert len(snapshot.segment_states) == 16
     assert snapshot.segment_states[0]["derived"]["wind_class"] == "unknown"
+    assert isinstance(snapshot.live_insights, list)
     assert snapshot.connection_status == "connected"
     assert snapshot.replay_status == "idle"
 
@@ -237,3 +238,99 @@ def test_reducer_traffic_scores_increase_for_clustered_cars() -> None:
     assert scores["bh-s08"] == pytest.approx(40.0)
     assert scores["bh-s07"] == pytest.approx(20.0)
     assert scores["bh-s09"] == pytest.approx(20.0)
+
+
+def test_reducer_emits_persistent_traffic_insight_and_expires_it() -> None:
+    reducer = TrackStateReducer(fixture_id="bahrain-2023-race")
+
+    reducer.apply_event(
+        {
+            "event_type": "location",
+            "driver_number": 1,
+            "occurred_at": "2023-03-05T15:00:00+00:00",
+            "payload": {
+                "x": 10.0,
+                "y": 20.0,
+                "segment_id": "bh-s08",
+            },
+        }
+    )
+    snapshot = reducer.apply_event(
+        {
+            "event_type": "location",
+            "driver_number": 11,
+            "occurred_at": "2023-03-05T15:00:01+00:00",
+            "payload": {
+                "x": 11.0,
+                "y": 21.0,
+                "segment_id": "bh-s08",
+            },
+        }
+    )
+
+    assert [insight.title for insight in snapshot.live_insights] == ["Traffic cluster persists"]
+
+    expired_snapshot = reducer.apply_event(
+        {
+            "event_type": "replay.status",
+            "occurred_at": "2023-03-05T15:01:10+00:00",
+            "payload": {"status": "running"},
+        }
+    )
+
+    assert expired_snapshot.live_insights == []
+
+
+def test_reducer_emits_segment_trending_faster_insight_from_car_data() -> None:
+    reducer = TrackStateReducer(fixture_id="bahrain-2023-race")
+
+    for index, speed in enumerate((120.0, 121.0, 123.0, 124.5), start=1):
+        snapshot = reducer.apply_event(
+            {
+                "event_type": "car_data",
+                "driver_number": 1,
+                "occurred_at": f"2023-03-05T15:00:0{index}+00:00",
+                "payload": {
+                    "driver_number": 1,
+                    "segment_id": "bh-s06",
+                    "speed": speed,
+                },
+            }
+        )
+
+    assert any(insight.title == "Segment trending faster" for insight in snapshot.live_insights)
+
+
+def test_reducer_emits_dirty_zone_placeholder_from_race_control() -> None:
+    reducer = TrackStateReducer(fixture_id="bahrain-2023-race")
+
+    snapshot = reducer.apply_event(
+        {
+            "event_type": "race_control",
+            "occurred_at": "2023-03-05T15:00:00+00:00",
+            "payload": {
+                "sector": 3,
+                "message": "Debris reported at track edge",
+                "flag": "Yellow",
+            },
+        }
+    )
+
+    assert any(insight.title == "Dirty-zone placeholder" for insight in snapshot.live_insights)
+
+
+def test_reducer_emits_strong_wind_insight_on_sensitive_segment() -> None:
+    reducer = TrackStateReducer(fixture_id="bahrain-2023-race")
+
+    snapshot = reducer.apply_event(
+        {
+            "event_type": "weather",
+            "occurred_at": "2023-03-05T15:00:00+00:00",
+            "payload": {
+                "wind_direction": 162,
+                "wind_speed": 9.0,
+            },
+        }
+    )
+
+    assert any(insight.title == "Strong wind at corner entry" for insight in snapshot.live_insights)

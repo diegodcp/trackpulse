@@ -9,20 +9,22 @@ from ..inference import CircuitPoint, TrackSegmentPath
 class TrackSegmentModel:
     segment_id: str
     direction_deg: float
+    is_braking_zone: bool = False
+    is_fast_corner: bool = False
 
 
 # Assumption (TP-BH-0015): backend replay uses the same stable, stylized Bahrain
 # segment IDs as the frontend fixture so segment-level overlays remain aligned.
 BAHRAIN_TRACK_SEGMENTS: tuple[TrackSegmentModel, ...] = (
-    TrackSegmentModel(segment_id="bh-s01", direction_deg=162.0),
-    TrackSegmentModel(segment_id="bh-s02", direction_deg=130.0),
-    TrackSegmentModel(segment_id="bh-s03", direction_deg=112.0),
+    TrackSegmentModel(segment_id="bh-s01", direction_deg=162.0, is_braking_zone=True),
+    TrackSegmentModel(segment_id="bh-s02", direction_deg=130.0, is_braking_zone=True),
+    TrackSegmentModel(segment_id="bh-s03", direction_deg=112.0, is_fast_corner=True),
     TrackSegmentModel(segment_id="bh-s04", direction_deg=88.0),
     TrackSegmentModel(segment_id="bh-s05", direction_deg=84.0),
-    TrackSegmentModel(segment_id="bh-s06", direction_deg=80.0),
-    TrackSegmentModel(segment_id="bh-s07", direction_deg=71.0),
+    TrackSegmentModel(segment_id="bh-s06", direction_deg=80.0, is_fast_corner=True),
+    TrackSegmentModel(segment_id="bh-s07", direction_deg=71.0, is_fast_corner=True),
     TrackSegmentModel(segment_id="bh-s08", direction_deg=35.0),
-    TrackSegmentModel(segment_id="bh-s09", direction_deg=344.0),
+    TrackSegmentModel(segment_id="bh-s09", direction_deg=344.0, is_braking_zone=True),
     TrackSegmentModel(segment_id="bh-s10", direction_deg=306.0),
     TrackSegmentModel(segment_id="bh-s11", direction_deg=286.0),
     TrackSegmentModel(segment_id="bh-s12", direction_deg=281.0),
@@ -31,6 +33,12 @@ BAHRAIN_TRACK_SEGMENTS: tuple[TrackSegmentModel, ...] = (
     TrackSegmentModel(segment_id="bh-s15", direction_deg=236.0),
     TrackSegmentModel(segment_id="bh-s16", direction_deg=200.0),
 )
+
+BAHRAIN_SECTOR_SEGMENTS: dict[int, tuple[str, ...]] = {
+    1: ("bh-s01", "bh-s02", "bh-s03", "bh-s04", "bh-s05"),
+    2: ("bh-s06", "bh-s07", "bh-s08", "bh-s09", "bh-s10"),
+    3: ("bh-s11", "bh-s12", "bh-s13", "bh-s14", "bh-s15", "bh-s16"),
+}
 
 BAHRAIN_MAP_WIDTH: int = 1200
 BAHRAIN_MAP_HEIGHT: int = 700

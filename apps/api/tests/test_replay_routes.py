@@ -61,15 +61,15 @@ async def test_replay_api_endpoints_expose_fixture_manifest_status_and_track_sta
                 "date": "2023-03-05T15:00:02.000+00:00",
                 "driver_number": 1,
                 "session_key": 9149,
-                "x": 14.0,
-                "y": 23.0,
+                "x": 10.2,
+                "y": 20.2,
             },
             {
                 "date": "2023-03-05T15:00:04.000+00:00",
                 "driver_number": 11,
                 "session_key": 9149,
-                "x": 18.0,
-                "y": 26.0,
+                "x": 10.4,
+                "y": 20.4,
             },
         ],
     )
@@ -126,7 +126,7 @@ async def test_replay_api_endpoints_expose_fixture_manifest_status_and_track_sta
             "/api/v1/replay/bahrain-2023-race/start",
             json={"speed_multiplier": 20},
         )
-        await asyncio.sleep(0.03)
+        await asyncio.sleep(0.14)
         replay_status_response = await client.get("/api/v1/events/replay-status")
         track_state_response = await client.get("/api/v1/track-state/latest")
         pause_response = await client.post("/api/v1/replay/bahrain-2023-race/pause")
@@ -176,12 +176,14 @@ async def test_replay_api_endpoints_expose_fixture_manifest_status_and_track_sta
     assert snapshot["weather"]["truth_label"] == "measured"
     assert isinstance(snapshot["car_markers"], list)
     assert isinstance(snapshot["segment_states"], list)
+    assert isinstance(snapshot["live_insights"], list)
     assert len(snapshot["segment_states"]) == 16
     assert snapshot["segment_states"][0]["measured"]["truth_label"] == "measured"
     assert snapshot["segment_states"][0]["derived"]["truth_label"] == "derived"
     assert "traffic_score" in snapshot["segment_states"][0]["derived"]
     assert snapshot["segment_states"][0]["derived"]["traffic_truth_label"] == "derived"
     assert snapshot["replay_status"] in {"running", "completed"}
+    assert len(snapshot["live_insights"]) >= 1
 
     assert pause_response.status_code == 200
     assert pause_response.json()["status"] in {"paused", "completed"}

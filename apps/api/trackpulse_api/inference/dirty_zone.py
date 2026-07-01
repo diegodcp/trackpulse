@@ -58,12 +58,12 @@ def _normalize_text(value: str | None) -> str:
 def _select_trigger(flag: str, category: str, message: str) -> str | None:
     if "double yellow" in flag or "double yellow" in message:
         return TRIGGER_DOUBLE_YELLOW
-    if "yellow" in flag:
-        return TRIGGER_YELLOW
     if "debris" in message:
         return TRIGGER_DEBRIS_MESSAGE
     if "incident" in message:
         return TRIGGER_INCIDENT_MESSAGE
+    if "yellow" in flag:
+        return TRIGGER_YELLOW
 
     safety_car_markers = ("safety car", "virtual safety car", "vsc")
     if any(marker in flag for marker in safety_car_markers):
