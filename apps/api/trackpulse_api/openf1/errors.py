@@ -3,6 +3,10 @@ from __future__ import annotations
 from .models import SessionDiscoveryQuery
 
 
+class OpenF1RequestError(RuntimeError):
+    """Raised when an OpenF1 request fails after retries."""
+
+
 class SessionNotFoundError(LookupError):
     def __init__(self, query: SessionDiscoveryQuery) -> None:
         self.query = query

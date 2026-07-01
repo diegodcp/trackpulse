@@ -15,6 +15,10 @@ class AppSettings(BaseSettings):
     app_name: str = "TrackPulse API"
     app_version: str = "0.1.0"
     openf1_mode: Literal["fixture", "historical", "live"] = "fixture"
+    openf1_base_url: str = "https://api.openf1.org"
+    openf1_bearer_token: str | None = None
+    openf1_timeout_seconds: float = 10.0
+    openf1_max_retries: int = 2
     log_level: str = "INFO"
     cors_allow_origins: str = Field(
         default=",".join(_default_cors_allow_origins()),
