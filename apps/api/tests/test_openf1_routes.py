@@ -138,6 +138,7 @@ async def test_openf1_proxy_endpoints_return_fixture_envelopes(
         "rainfall": False,
     }
     assert 0.0 <= first_segment["derived"]["trafficScore"] <= 100.0
+    assert 0.0 <= first_segment["derived"]["windStrengthScore"] <= 100.0
     assert first_segment["derived"]["windClass"] in {
         "headwind",
         "tailwind",

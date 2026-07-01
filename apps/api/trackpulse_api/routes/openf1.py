@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ValidationError
 
+from ..inference import project_wind_projection
 from ..observability import request_id_context
 from ..openf1 import (
     OpenF1HistoricalClient,
@@ -54,6 +55,7 @@ class TrackSegmentDerivedState(BaseModel):
     trafficScore: float | None = None
     windRelativeAngleDeg: float | None = None
     windClass: str | None = None
+    windStrengthScore: float | None = None
 
 
 class TrackSegmentInferredState(BaseModel):
@@ -132,32 +134,15 @@ def _sort_location_records(records: list[OpenF1Location]) -> list[OpenF1Location
     return sorted(records, key=lambda record: (record.date, record.driver_number))
 
 
-def _normalize_angle(angle: float) -> float:
-    return ((angle + 180.0) % 360.0) - 180.0
-
-
-def _wind_class(relative_angle: float | None) -> str:
-    if relative_angle is None:
-        return "unknown"
-
-    absolute_angle = abs(relative_angle)
-    if absolute_angle <= 30.0:
-        return "headwind"
-    if absolute_angle >= 150.0:
-        return "tailwind"
-    if relative_angle < 0:
-        return "crosswind_left"
-    return "crosswind_right"
-
-
 def _build_track_state_from_weather(weather: OpenF1Weather) -> list[TrackSegmentStateResponse]:
     segment_states: list[TrackSegmentStateResponse] = []
-    wind_direction = float(weather.wind_direction) if weather.wind_direction is not None else None
 
     for index, (segment_id, segment_heading_deg) in enumerate(FIXTURE_SEGMENTS):
-        wind_relative_angle: float | None = None
-        if wind_direction is not None:
-            wind_relative_angle = round(_normalize_angle(wind_direction - segment_heading_deg), 1)
+        wind_projection = project_wind_projection(
+            wind_direction_deg=float(weather.wind_direction) if weather.wind_direction is not None else None,
+            wind_speed_ms=weather.wind_speed,
+            segment_direction_deg=segment_heading_deg,
+        )
 
         segment_states.append(
             TrackSegmentStateResponse(
@@ -173,8 +158,9 @@ def _build_track_state_from_weather(weather: OpenF1Weather) -> list[TrackSegment
                 ),
                 derived=TrackSegmentDerivedState(
                     trafficScore=float(min(100, 15 + (index * 7))),
-                    windRelativeAngleDeg=wind_relative_angle,
-                    windClass=_wind_class(wind_relative_angle),
+                    windRelativeAngleDeg=wind_projection.relative_angle_deg,
+                    windClass=wind_projection.wind_class,
+                    windStrengthScore=wind_projection.strength_score,
                 ),
                 inferred=TrackSegmentInferredState(confidence=0.5),
             )
