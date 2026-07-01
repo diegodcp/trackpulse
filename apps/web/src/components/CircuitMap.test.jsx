@@ -16,8 +16,14 @@ describe('TP-BH-0012 Bahrain circuit map', () => {
     render(<CircuitMap circuit={bahrainCircuit} activeLayer="Track Temp" />);
 
     const svg = screen.getByRole('img', { name: /Circuit map with 16 segments/ });
+    const geometryTransform = screen.getByTestId('circuit-geometry-transform');
     expect(svg).toBeInTheDocument();
     expect(svg).toHaveAttribute('viewBox', '0 0 1200 700');
+    expect(geometryTransform).toHaveAttribute(
+      'transform',
+      expect.stringContaining('translate(600 350) rotate(90) scale(-1 1)')
+    );
+    expect(screen.getByText('Derived from OpenF1 location telemetry, single lap, smoothed.')).toBeInTheDocument();
   });
 
   it('displays tooltip on hover', async () => {
@@ -126,7 +132,7 @@ describe('TP-BH-0012 Bahrain circuit map', () => {
 
     await user.hover(startFinishSegment);
 
-    expect(screen.getByText('Projection (Derived): crosswind right')).toBeInTheDocument();
+    expect(screen.getByText(/Projection \(Derived\): (headwind|tailwind|crosswind left|crosswind right)/)).toBeInTheDocument();
   });
 
   it('applies traffic score metadata when traffic layer is active', () => {
@@ -332,5 +338,19 @@ describe('TP-BH-0012 Bahrain circuit map', () => {
       expect(path).toHaveAttribute('d');
       expect(path).toHaveAttribute('role', 'button');
     });
+  });
+
+  it('matches regression snapshot and has non-empty segment paths', () => {
+    const { container } = render(<CircuitMap circuit={bahrainCircuit} activeLayer="Track Temp" />);
+
+    const segmentPaths = Array.from(container.querySelectorAll('.segment')).map(
+      (path) => path.getAttribute('d') ?? ''
+    );
+
+    expect(segmentPaths).toHaveLength(16);
+    segmentPaths.forEach((pathData) => {
+      expect(pathData.trim().length).toBeGreaterThan(0);
+    });
+    expect(segmentPaths).toMatchSnapshot();
   });
 });

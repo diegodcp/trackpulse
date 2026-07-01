@@ -120,6 +120,25 @@ export function CircuitMap({
   }
 
   const { width, height, centerline, segments } = circuit;
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const bounds = centerline.reduce(
+    (acc, point) => ({
+      minX: Math.min(acc.minX, point.x),
+      maxX: Math.max(acc.maxX, point.x),
+      minY: Math.min(acc.minY, point.y),
+      maxY: Math.max(acc.maxY, point.y)
+    }),
+    {
+      minX: Number.POSITIVE_INFINITY,
+      maxX: Number.NEGATIVE_INFINITY,
+      minY: Number.POSITIVE_INFINITY,
+      maxY: Number.NEGATIVE_INFINITY
+    }
+  );
+  const geometryCenterX = (bounds.minX + bounds.maxX) / 2;
+  const geometryCenterY = (bounds.minY + bounds.maxY) / 2;
+  const geometryTransform = `translate(${centerX} ${centerY}) rotate(90) scale(-1 1) translate(${-geometryCenterX} ${-geometryCenterY})`;
   const windArrows = createWindArrows(width, height, windDirectionDeg);
   const showWindOverlay = activeLayer === 'Wind';
   const segmentStateById = new Map(
@@ -166,86 +185,90 @@ export function CircuitMap({
         role="img"
         aria-label={`Circuit map with ${segments.length} segments`}
       >
-        {/* Centerline */}
-        <path
-          d={pathData}
-          className="centerline"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="4"
-        />
+        <title>{circuit.precisionNote ?? `${circuit.circuitName} geometry`}</title>
 
-        {/* Segment overlays */}
-        {segments.map((segment) => {
-          const backendSegmentState = segmentStateById.get(segment.segmentId);
-          const fallbackWindProjection = buildWindProjection(segment.dominantDirectionDeg, windDirectionDeg, windSpeedMs);
-          const windClass = backendSegmentState?.derived?.wind_class ?? fallbackWindProjection.windClass;
-          const measuredWindDirection = backendSegmentState?.measured?.wind_direction_deg ?? windDirectionDeg;
-          const trafficScore = clampTrafficScore(backendSegmentState?.derived?.traffic_score ?? 0);
-          const trafficTruthLabel = backendSegmentState?.derived?.traffic_truth_label ?? 'derived';
-          const isTrafficLayer = activeLayer === 'Traffic';
-          const segmentPath = segment.path
-            .map((point, idx) => `${idx === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
-            .join(' ');
-          const segmentStyle = isTrafficLayer
-            ? {
-                stroke: getTrafficStroke(trafficScore),
-                opacity: 0.35 + (trafficScore / 100) * 0.6,
-                strokeWidth: 7 + (trafficScore / 100) * 6
-              }
-            : undefined;
+        <g data-testid="circuit-geometry-transform" transform={geometryTransform}>
+          {/* Centerline */}
+          <path
+            d={pathData}
+            className="centerline"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="4"
+          />
 
-          return (
-            <g key={segment.segmentId} className="segment-group">
-              <path
-                d={segmentPath}
-                className={`segment segment-${segment.type} layer-${activeLayer.toLowerCase().replace(/\s+/g, '-')} ${
-                  hoveredSegment?.segmentId === segment.segmentId ? 'is-hovered' : ''
-                }`}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="8"
-                strokeLinecap="round"
-                onMouseEnter={(e) => handleSegmentMouseEnter(segment, e)}
-                onMouseLeave={handleSegmentMouseLeave}
-                onFocus={(e) => handleSegmentFocus(segment, e)}
-                role="button"
-                tabIndex="0"
-                aria-label={`${segment.label} segment in sector ${segment.sector}; derived wind class ${formatWindClass(windClass)}`}
-                data-derived-wind-class={windClass}
-                data-measured-wind-direction={measuredWindDirection ?? 'unknown'}
-                data-derived-traffic-score={trafficScore.toFixed(1)}
-                data-derived-traffic-truth-label={trafficTruthLabel}
-                style={segmentStyle}
-              />
-            </g>
-          );
-        })}
+          {/* Segment overlays */}
+          {segments.map((segment) => {
+            const backendSegmentState = segmentStateById.get(segment.segmentId);
+            const fallbackWindProjection = buildWindProjection(segment.dominantDirectionDeg, windDirectionDeg, windSpeedMs);
+            const windClass = backendSegmentState?.derived?.wind_class ?? fallbackWindProjection.windClass;
+            const measuredWindDirection = backendSegmentState?.measured?.wind_direction_deg ?? windDirectionDeg;
+            const trafficScore = clampTrafficScore(backendSegmentState?.derived?.traffic_score ?? 0);
+            const trafficTruthLabel = backendSegmentState?.derived?.traffic_truth_label ?? 'derived';
+            const isTrafficLayer = activeLayer === 'Traffic';
+            const segmentPath = segment.path
+              .map((point, idx) => `${idx === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
+              .join(' ');
+            const segmentStyle = isTrafficLayer
+              ? {
+                  stroke: getTrafficStroke(trafficScore),
+                  opacity: 0.35 + (trafficScore / 100) * 0.6,
+                  strokeWidth: 7 + (trafficScore / 100) * 6
+                }
+              : undefined;
 
-        <CornerEvolutionLayer
-          activeLayer={activeLayer}
-          segments={segments}
-          segmentStateById={segmentStateById}
-        />
-
-        {/* Wind layer overlay */}
-        {showWindOverlay && (
-          <g className="wind-overlay" aria-label="Wind layer arrows (derived)">
-            {windArrows.map((arrow) => (
-              <g
-                key={arrow.id}
-                transform={`translate(${arrow.x}, ${arrow.y}) rotate(${arrow.rotateDeg})`}
-              >
-                <g className="wind-arrow" style={{ animationDelay: arrow.delay }}>
-                  <line x1="-10" y1="0" x2="8" y2="0" className="wind-arrow-shaft" />
-                  <polyline points="3,-4 8,0 3,4" className="wind-arrow-head" />
-                </g>
+            return (
+              <g key={segment.segmentId} className="segment-group">
+                <path
+                  d={segmentPath}
+                  className={`segment segment-${segment.type} layer-${activeLayer.toLowerCase().replace(/\s+/g, '-')} ${
+                    hoveredSegment?.segmentId === segment.segmentId ? 'is-hovered' : ''
+                  }`}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="8"
+                  strokeLinecap="round"
+                  onMouseEnter={(e) => handleSegmentMouseEnter(segment, e)}
+                  onMouseLeave={handleSegmentMouseLeave}
+                  onFocus={(e) => handleSegmentFocus(segment, e)}
+                  role="button"
+                  tabIndex="0"
+                  aria-label={`${segment.label} segment in sector ${segment.sector}; derived wind class ${formatWindClass(windClass)}`}
+                  data-derived-wind-class={windClass}
+                  data-measured-wind-direction={measuredWindDirection ?? 'unknown'}
+                  data-derived-traffic-score={trafficScore.toFixed(1)}
+                  data-derived-traffic-truth-label={trafficTruthLabel}
+                  style={segmentStyle}
+                />
               </g>
-            ))}
-          </g>
-        )}
+            );
+          })}
 
-        <CarMarkerLayer markers={carMarkers} />
+          <CornerEvolutionLayer
+            activeLayer={activeLayer}
+            segments={segments}
+            segmentStateById={segmentStateById}
+          />
+
+          {/* Wind layer overlay */}
+          {showWindOverlay && (
+            <g className="wind-overlay" aria-label="Wind layer arrows (derived)">
+              {windArrows.map((arrow) => (
+                <g
+                  key={arrow.id}
+                  transform={`translate(${arrow.x}, ${arrow.y}) rotate(${arrow.rotateDeg})`}
+                >
+                  <g className="wind-arrow" style={{ animationDelay: arrow.delay }}>
+                    <line x1="-10" y1="0" x2="8" y2="0" className="wind-arrow-shaft" />
+                    <polyline points="3,-4 8,0 3,4" className="wind-arrow-head" />
+                  </g>
+                </g>
+              ))}
+            </g>
+          )}
+
+          <CarMarkerLayer markers={carMarkers} />
+        </g>
 
         {/* Tooltip */}
         {hoveredSegment && (
