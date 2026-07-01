@@ -169,6 +169,53 @@ main {
   font-size: 0.9rem;
 }
 
+.replay-controls {
+  margin: 0.5rem 0 0.9rem;
+  padding: 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(21, 27, 36, 0.72);
+}
+
+.replay-label {
+  margin: 0 0 0.45rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+}
+
+.replay-controls-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.replay-speed-group {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.replay-scrubber-label {
+  display: block;
+  margin-top: 0.55rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.73rem;
+  color: var(--ink-soft);
+}
+
+.replay-controls input[type='range'] {
+  width: 100%;
+}
+
+.replay-meta {
+  margin: 0.45rem 0 0;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
 .layer-toggle-buttons {
   display: flex;
   flex-wrap: wrap;

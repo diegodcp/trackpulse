@@ -10,6 +10,10 @@ FastAPI backend for TrackPulse health endpoints and OpenF1 proxy routes.
 - `GET /api/v1/sessions/latest`
 - `GET /api/v1/openf1/weather/latest`
 - `GET /api/v1/openf1/location/sample`
+- `GET /api/v1/replay/fixtures`
+- `POST /api/v1/replay/start`
+- `POST /api/v1/replay/stop`
+- `GET /api/v1/replay/state`
 
 ## Development
 

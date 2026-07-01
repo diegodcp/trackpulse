@@ -19,5 +19,6 @@ Implemented components:
 - `npm install`
 - `npm run dev`
 - `npm run test`
+- `npm run test:e2e`
 
 During local development, Vite proxies `/api/*` requests to the FastAPI backend at `http://127.0.0.1:8000`.

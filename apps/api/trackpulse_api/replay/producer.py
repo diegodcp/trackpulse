@@ -11,7 +11,7 @@ from typing import Any, Awaitable, Callable
 ReplaySubscriber = Callable[[dict[str, Any]], None | Awaitable[None]]
 StatusSubscriber = Callable[["ReplayStatusUpdate"], None | Awaitable[None]]
 
-SUPPORTED_SPEED_MULTIPLIERS: frozenset[int] = frozenset({1, 5, 20, 100})
+SUPPORTED_SPEED_MULTIPLIERS: frozenset[int] = frozenset({1, 5, 10, 20, 100})
 
 
 class ReplayStatus(str, Enum):

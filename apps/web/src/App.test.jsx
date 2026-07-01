@@ -130,4 +130,17 @@ describe('TP-FE-03 Weather banner connection', () => {
 
     expect(await screen.findByText('43.2 C')).toBeInTheDocument();
   });
+
+  it('shows fixture replay controls and map marker', async () => {
+    render(<App />);
+
+    expect(await screen.findByLabelText('Fixture replay controls')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '1x' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '5x' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '10x' })).toBeInTheDocument();
+    expect(screen.getByTestId('replay-scrubber')).toBeInTheDocument();
+    expect(screen.getByTestId('replay-time')).toBeInTheDocument();
+    expect(screen.getByTestId('replay-car-marker')).toBeInTheDocument();
+  });
 });

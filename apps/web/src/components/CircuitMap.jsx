@@ -63,7 +63,13 @@ function createWindArrows(width, height, windDirectionDeg) {
   });
 }
 
-export function CircuitMap({ circuit, activeLayer, windDirectionDeg = null, windSpeedMs = null }) {
+export function CircuitMap({
+  circuit,
+  activeLayer,
+  windDirectionDeg = null,
+  windSpeedMs = null,
+  carMarkers = []
+}) {
   const [hoveredSegment, setHoveredSegment] = useState(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
@@ -168,6 +174,25 @@ export function CircuitMap({ circuit, activeLayer, windDirectionDeg = null, wind
                   <line x1="-10" y1="0" x2="8" y2="0" className="wind-arrow-shaft" />
                   <polyline points="3,-4 8,0 3,4" className="wind-arrow-head" />
                 </g>
+              </g>
+            ))}
+          </g>
+        )}
+
+        {/* Replay car markers (measured location projected to map space) */}
+        {carMarkers.length > 0 && (
+          <g className="replay-car-markers" aria-label="Replay car markers">
+            {carMarkers.map((marker) => (
+              <g
+                key={marker.id}
+                transform={`translate(${marker.x}, ${marker.y})`}
+                data-testid={marker.testId ?? undefined}
+              >
+                <circle r="7" className="replay-car-marker-ping" />
+                <circle r="4" className="replay-car-marker-core" />
+                <text y="-10" textAnchor="middle" className="replay-car-marker-label">
+                  {marker.label}
+                </text>
               </g>
             ))}
           </g>
