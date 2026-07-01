@@ -13,6 +13,8 @@ def test_settings_load_from_env(monkeypatch) -> None:
     monkeypatch.setenv("TRACKPULSE_OPENF1_SEED_YEAR", "2025")
     monkeypatch.setenv("TRACKPULSE_OPENF1_SEED_COUNTRY_NAME", "Australia")
     monkeypatch.setenv("TRACKPULSE_OPENF1_SEED_SESSION_NAME", "Qualifying")
+    monkeypatch.setenv("TRACKPULSE_DB_ENABLED", "true")
+    monkeypatch.setenv("TRACKPULSE_DB_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/trackpulse_test")
     monkeypatch.setenv("TRACKPULSE_CORS_ALLOW_ORIGINS", "https://app.example.com,https://admin.example.com")
 
     get_settings.cache_clear()
@@ -29,5 +31,7 @@ def test_settings_load_from_env(monkeypatch) -> None:
     assert settings.openf1_seed_year == 2025
     assert settings.openf1_seed_country_name == "Australia"
     assert settings.openf1_seed_session_name == "Qualifying"
+    assert settings.db_enabled is True
+    assert settings.db_url == "postgresql+asyncpg://postgres:postgres@localhost:5432/trackpulse_test"
     assert settings.cors_allow_origins == "https://app.example.com,https://admin.example.com"
     assert settings.cors_allow_origins_list == ["https://app.example.com", "https://admin.example.com"]

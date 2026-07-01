@@ -30,6 +30,8 @@ class AppSettings(BaseSettings):
     openf1_seed_year: int = 2023
     openf1_seed_country_name: str = "Bahrain"
     openf1_seed_session_name: str = "Race"
+    db_enabled: bool = False
+    db_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/trackpulse"
     log_level: str = "INFO"
     cors_allow_origins: str = Field(
         default=",".join(_default_cors_allow_origins()),
