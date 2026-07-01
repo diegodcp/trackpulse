@@ -1,7 +1,8 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { App } from './App';
+import { server, weatherFixture } from './test/server';
 
 describe('TP-FE-01 UI shell', () => {
   it('renders app shell elements', () => {
@@ -80,5 +81,41 @@ describe('TP-FE-02 Synthetic circuit map', () => {
     render(<App />);
 
     expect(screen.getByText('Active Layer: Track Temp')).toBeInTheDocument();
+  });
+});
+
+describe('TP-FE-03 Weather banner connection', () => {
+  it('renders measured weather values from MSW fixture', async () => {
+    render(<App />);
+
+    expect(await screen.findByText(`${weatherFixture.track_temperature.toFixed(1)} C`)).toBeInTheDocument();
+    expect(screen.getByText(`${weatherFixture.air_temperature.toFixed(1)} C`)).toBeInTheDocument();
+    expect(
+      screen.getByText(`${weatherFixture.wind_speed.toFixed(1)} m/s @ ${weatherFixture.wind_direction} deg`)
+    ).toBeInTheDocument();
+    expect(screen.getByText(`${weatherFixture.rainfall.toFixed(1)} mm`)).toBeInTheDocument();
+    const statusSection = screen.getByRole('region', { name: 'Session status' });
+    expect(within(statusSection).getByText('Measured')).toBeInTheDocument();
+  });
+
+  it('shows safe error state when payload is invalid', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ track_temperature: 'not-a-number' })
+    });
+
+    render(<App />);
+
+    expect(
+      await screen.findByText('Measured weather unavailable. Please try again shortly.')
+    ).toBeInTheDocument();
+
+    fetchSpy.mockRestore();
+  });
+
+  it('app-level flow shows track temperature', async () => {
+    render(<App />);
+
+    expect(await screen.findByText('43.2 C')).toBeInTheDocument();
   });
 });

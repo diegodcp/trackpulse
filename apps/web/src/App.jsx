@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppShell } from './components/AppShell';
 import { InsightPanel } from './components/InsightPanel';
 import { LayerToggleBar } from './components/LayerToggleBar';
@@ -19,16 +20,19 @@ const LAYERS = [
 
 export function App() {
   const [activeLayer, setActiveLayer] = useState(LAYERS[0]);
+  const [queryClient] = useState(() => new QueryClient());
 
   return (
-    <AppShell statusSlot={<SessionStatusBar />}>
-      <TrackMapPanel activeLayer={activeLayer} />
-      <LayerToggleBar
-        layers={LAYERS}
-        activeLayer={activeLayer}
-        onLayerChange={setActiveLayer}
-      />
-      <InsightPanel insights={mockInsights} />
-    </AppShell>
+    <QueryClientProvider client={queryClient}>
+      <AppShell statusSlot={<SessionStatusBar />}>
+        <TrackMapPanel activeLayer={activeLayer} />
+        <LayerToggleBar
+          layers={LAYERS}
+          activeLayer={activeLayer}
+          onLayerChange={setActiveLayer}
+        />
+        <InsightPanel insights={mockInsights} />
+      </AppShell>
+    </QueryClientProvider>
   );
 }

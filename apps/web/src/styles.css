@@ -129,6 +129,15 @@ main {
   letter-spacing: 0.05em;
 }
 
+.session-status-message {
+  grid-template-columns: 1fr !important;
+  color: var(--ink-soft) !important;
+}
+
+.session-status-message-error {
+  color: #ffb0b0 !important;
+}
+
 .track-map-panel {
   grid-column: 1;
   grid-row: 1 / span 2;
