@@ -7,6 +7,88 @@ on:
       - main
 
 jobs:
+  secret-scan:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history so that gitleaks can scan all commits on PR branches.
+          fetch-depth: 0
+
+      - name: Scan for hardcoded secrets in source files
+        # Grep tracked files for patterns that indicate real credentials.
+        # .env.example is excluded because it intentionally contains placeholder names.
+        # node_modules and .venv are excluded because they are third-party.
+        run: |
+          FAIL=0
+
+          # PEM private keys
+          if grep -rE --include="*.py" --include="*.js" --include="*.jsx" \
+               --include="*.ts" --include="*.tsx" --include="*.json" \
+               --include="*.yml" --include="*.yaml" \
+               --exclude-dir=".git" --exclude-dir="node_modules" --exclude-dir=".venv" \
+               '-----BEGIN (RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY' .; then
+            echo "FAIL: PEM private key found in source"
+            FAIL=1
+          fi
+
+          # Hardcoded JWT Bearer tokens (ey... pattern, 80+ chars)
+          if grep -rE --include="*.py" --include="*.js" --include="*.jsx" \
+               --include="*.ts" --include="*.tsx" --include="*.json" \
+               --exclude-dir=".git" --exclude-dir="node_modules" --exclude-dir=".venv" \
+               "Bearer ey[A-Za-z0-9_-]{40,}" .; then
+            echo "FAIL: hardcoded JWT Bearer token found in source"
+            FAIL=1
+          fi
+
+          # AWS access key IDs
+          if grep -rE --include="*.py" --include="*.js" --include="*.jsx" \
+               --include="*.ts" --include="*.tsx" --include="*.json" \
+               --exclude-dir=".git" --exclude-dir="node_modules" --exclude-dir=".venv" \
+               'AKIA[0-9A-Z]{16}' .; then
+            echo "FAIL: AWS access key ID found in source"
+            FAIL=1
+          fi
+
+          # OpenF1 bearer token assigned to a non-placeholder value
+          # Matches TRACKPULSE_OPENF1_BEARER_TOKEN=<anything that is not a placeholder>
+          if grep -rE \
+               --exclude=".env.example" \
+               --exclude-dir=".git" --exclude-dir="node_modules" --exclude-dir=".venv" \
+               'TRACKPULSE_OPENF1_(BEARER_TOKEN|PASSWORD|USERNAME)\s*=\s*[A-Za-z0-9+/=_-]{8,}' .; then
+            echo "FAIL: real OpenF1 credential found (not a placeholder)"
+            FAIL=1
+          fi
+
+          exit $FAIL
+
+      - name: Build frontend and scan bundle for secret env var names
+        # The built bundle must not contain the names of secret credentials.
+        # A reference to e.g. TRACKPULSE_OPENF1_BEARER_TOKEN in the bundle
+        # would mean the frontend is trying to read or embed that secret.
+        working-directory: apps/web
+        run: |
+          npm ci --silent
+          npm run build
+
+          FAIL=0
+          FORBIDDEN=(
+            "TRACKPULSE_OPENF1_BEARER_TOKEN"
+            "TRACKPULSE_OPENF1_PASSWORD"
+            "TRACKPULSE_OPENF1_USERNAME"
+            "OPENF1_TOKEN"
+            "OPENF1_SECRET"
+          )
+          for pattern in "${FORBIDDEN[@]}"; do
+            if grep -r "$pattern" dist/; then
+              echo "FAIL: frontend bundle references secret env var: $pattern"
+              FAIL=1
+            fi
+          done
+          exit $FAIL
+
   structure:
     name: Validate repository structure
     runs-on: ubuntu-latest

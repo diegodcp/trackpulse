@@ -29,6 +29,17 @@ venv/
 *.log
 *.pid
 
+# Local data directory (scratch downloads, temp files)
+.data/
+
+# Generated fixture levels — never commit dev or full fixture data.
+# Only the reviewed golden fixture under examples/fixtures/**/golden/ is allowed.
+# raw/ and normalized/ are intermediate pipeline outputs.
+examples/fixtures/**/dev/
+examples/fixtures/**/full/
+examples/fixtures/**/raw/
+examples/fixtures/**/normalized/
+
 # AI Prompt Enginnering
 prompts/
 adr/
