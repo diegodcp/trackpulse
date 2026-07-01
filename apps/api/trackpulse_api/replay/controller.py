@@ -8,7 +8,11 @@ from typing import Literal
 from ..openf1 import OpenF1HistoricalClient, OpenF1Location, SessionDiscoveryQuery
 from ..settings import AppSettings
 
-SUPPORTED_REPLAY_SPEEDS: tuple[int, ...] = (1, 5, 10)
+SUPPORTED_REPLAY_SPEEDS: tuple[int, ...] = (1, 5, 20, 100)
+
+
+class FixtureNotFoundError(ValueError):
+    """Raised when the requested fixture is not available for replay."""
 
 
 def _iso(value: datetime) -> str:
@@ -68,6 +72,7 @@ class FixtureReplayController:
         self._coordinate_bounds: ReplayCoordinateBounds | None = None
         self._replay_time: str | None = None
         self._stop_requested = False
+        self._stop_status = "paused"
 
     def list_fixtures(self) -> list[ReplayFixtureSummary]:
         fixture_id = self._fixture_id
@@ -89,7 +94,7 @@ class FixtureReplayController:
             raise ValueError(f"speed_multiplier must be one of {list(SUPPORTED_REPLAY_SPEEDS)}")
 
         if fixture_id != self._fixture_id:
-            raise ValueError("fixture_id is not available")
+            raise FixtureNotFoundError(f"Fixture '{fixture_id}' was not found")
 
         async with self._lock:
             if not self._timeline:
@@ -106,18 +111,32 @@ class FixtureReplayController:
                 self._replay_time = None
 
             self._stop_requested = False
+            self._stop_status = "paused"
             self._status = "running"
             self._task = asyncio.create_task(self._run())
 
             return self.snapshot()
 
+    async def pause(self) -> ReplayStateSnapshot:
+        return await self._halt("paused")
+
     async def stop(self) -> ReplayStateSnapshot:
+        return await self._halt("stopped")
+
+    async def _halt(self, target_status: str) -> ReplayStateSnapshot:
+        task: asyncio.Task[None] | None = None
         async with self._lock:
             if self._status != "running":
                 return self.snapshot()
 
             self._stop_requested = True
-            self._status = "paused"
+            self._stop_status = target_status
+            task = self._task
+
+        if task is not None:
+            await task
+
+        async with self._lock:
             return self.snapshot()
 
     def snapshot(self) -> ReplayStateSnapshot:
@@ -186,6 +205,7 @@ class FixtureReplayController:
                 if self._status != "running":
                     return
                 if self._stop_requested:
+                    self._status = self._stop_status
                     self._stop_requested = False
                     return
 

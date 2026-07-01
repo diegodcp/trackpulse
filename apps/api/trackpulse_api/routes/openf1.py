@@ -223,7 +223,7 @@ async def location_sample(settings: AppSettings = Depends(get_app_settings)) -> 
     return _success(records[:10])
 
 
-@router.get("/track-state/latest", response_model=ApiResponse[list[TrackSegmentStateResponse]])
+@router.get("/openf1/track-state/latest", response_model=ApiResponse[list[TrackSegmentStateResponse]])
 async def latest_track_state(
     settings: AppSettings = Depends(get_app_settings),
 ) -> ApiResponse[list[TrackSegmentStateResponse]] | JSONResponse:

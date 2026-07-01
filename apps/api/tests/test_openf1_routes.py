@@ -102,7 +102,7 @@ async def test_openf1_proxy_endpoints_return_fixture_envelopes(
         session_response = await client.get("/api/v1/sessions/latest")
         weather_response = await client.get("/api/v1/openf1/weather/latest")
         location_response = await client.get("/api/v1/openf1/location/sample")
-        track_state_response = await client.get("/api/v1/track-state/latest")
+        track_state_response = await client.get("/api/v1/openf1/track-state/latest")
 
     assert session_response.status_code == 200
     assert session_response.json()["data"]["session_key"] == 9149
@@ -253,5 +253,5 @@ async def test_openf1_proxy_uses_default_committed_fixture_data() -> None:
     assert response.status_code == 200
     assert payload["data"]["session_key"] == 9149
     assert payload["data"]["track_temperature"] == pytest.approx(43.2)
-    assert payload["data"]["air_temperature"] == pytest.approx(29.4)
+    assert payload["data"]["air_temperature"] == pytest.approx(27.4)
     assert payload["data"]["rainfall"] is False

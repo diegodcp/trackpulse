@@ -1,6 +1,6 @@
 """In-memory fixture replay primitives for TrackPulse."""
 
-from .controller import FixtureReplayController
+from .controller import FixtureNotFoundError, FixtureReplayController
 from .producer import (
     FixtureReplayProducer,
     InMemoryEventBus,
@@ -13,6 +13,7 @@ from .topics import REPLAY_DEFAULT_EVENT_TOPIC, REPLAY_STATUS_TOPIC
 
 __all__ = [
     "FixtureReplayController",
+    "FixtureNotFoundError",
     "FixtureReplayProducer",
     "InMemoryEventBus",
     "KafkaReplayEventBus",
