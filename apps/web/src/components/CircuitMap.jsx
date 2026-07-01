@@ -77,11 +77,15 @@ function formatConfidencePercent(value) {
   return `${Math.round(value * 100)}%`;
 }
 
-function createWindArrows(width, height, windDirectionDeg) {
+function createWindArrows(width, height, windDirectionDeg, baseStrokeUnit) {
   const columns = 6;
   const rows = 4;
   const xStep = width / (columns + 1);
   const yStep = height / (rows + 1);
+  const tailX = Number((-baseStrokeUnit).toFixed(2));
+  const headX = Number((baseStrokeUnit * 0.8).toFixed(2));
+  const headInsetX = Number((baseStrokeUnit * 0.3).toFixed(2));
+  const headHeightY = Number((baseStrokeUnit * 0.4).toFixed(2));
 
   return Array.from({ length: columns * rows }, (_, index) => {
     const column = index % columns;
@@ -95,7 +99,11 @@ function createWindArrows(width, height, windDirectionDeg) {
       x,
       y,
       delay,
-      rotateDeg: windDirectionDeg ?? 0
+      rotateDeg: windDirectionDeg ?? 0,
+      tailX,
+      headX,
+      headInsetX,
+      headHeightY
     };
   });
 }
@@ -120,6 +128,12 @@ export function CircuitMap({
   }
 
   const { width, height, centerline, segments } = circuit;
+  const baseStrokeUnit = width / 120;
+  const centerlineStrokeWidth = Number((baseStrokeUnit * 0.4).toFixed(2));
+  const segmentBaseStrokeWidth = Number((baseStrokeUnit * 0.8).toFixed(2));
+  const segmentHoverStrokeWidth = Number(baseStrokeUnit.toFixed(2));
+  const windArrowStrokeWidth = Number((baseStrokeUnit * 0.16).toFixed(2));
+  const windArrowPulseStrokeWidth = Number((baseStrokeUnit * 0.2).toFixed(2));
   const centerX = width / 2;
   const centerY = height / 2;
   const bounds = centerline.reduce(
@@ -139,7 +153,7 @@ export function CircuitMap({
   const geometryCenterX = (bounds.minX + bounds.maxX) / 2;
   const geometryCenterY = (bounds.minY + bounds.maxY) / 2;
   const geometryTransform = `translate(${centerX} ${centerY}) rotate(90) scale(-1 1) translate(${-geometryCenterX} ${-geometryCenterY})`;
-  const windArrows = createWindArrows(width, height, windDirectionDeg);
+  const windArrows = createWindArrows(width, height, windDirectionDeg, baseStrokeUnit);
   const showWindOverlay = activeLayer === 'Wind';
   const segmentStateById = new Map(
     (Array.isArray(segmentStates) ? segmentStates : [])
@@ -194,7 +208,7 @@ export function CircuitMap({
             className="centerline"
             fill="none"
             stroke="currentColor"
-            strokeWidth="4"
+            strokeWidth={centerlineStrokeWidth}
           />
 
           {/* Segment overlays */}
@@ -213,9 +227,13 @@ export function CircuitMap({
               ? {
                   stroke: getTrafficStroke(trafficScore),
                   opacity: 0.35 + (trafficScore / 100) * 0.6,
-                  strokeWidth: 7 + (trafficScore / 100) * 6
+                  strokeWidth: Number((baseStrokeUnit * (0.7 + (trafficScore / 100) * 0.6)).toFixed(2))
                 }
               : undefined;
+            const mergedSegmentStyle = {
+              ...(segmentStyle ?? {}),
+              '--segment-hover-stroke-width': segmentHoverStrokeWidth
+            };
 
             return (
               <g key={segment.segmentId} className="segment-group">
@@ -226,7 +244,7 @@ export function CircuitMap({
                   }`}
                   fill="none"
                   stroke="currentColor"
-                  strokeWidth="8"
+                  strokeWidth={segmentBaseStrokeWidth}
                   strokeLinecap="round"
                   onMouseEnter={(e) => handleSegmentMouseEnter(segment, e)}
                   onMouseLeave={handleSegmentMouseLeave}
@@ -238,7 +256,7 @@ export function CircuitMap({
                   data-measured-wind-direction={measuredWindDirection ?? 'unknown'}
                   data-derived-traffic-score={trafficScore.toFixed(1)}
                   data-derived-traffic-truth-label={trafficTruthLabel}
-                  style={segmentStyle}
+                  style={mergedSegmentStyle}
                 />
               </g>
             );
@@ -252,22 +270,32 @@ export function CircuitMap({
 
           {/* Wind layer overlay */}
           {showWindOverlay && (
-            <g className="wind-overlay" aria-label="Wind layer arrows (derived)">
+            <g
+              className="wind-overlay"
+              aria-label="Wind layer arrows (derived)"
+              style={{
+                '--wind-arrow-stroke-width': windArrowStrokeWidth,
+                '--wind-arrow-pulse-stroke-width': windArrowPulseStrokeWidth
+              }}
+            >
               {windArrows.map((arrow) => (
                 <g
                   key={arrow.id}
                   transform={`translate(${arrow.x}, ${arrow.y}) rotate(${arrow.rotateDeg})`}
                 >
                   <g className="wind-arrow" style={{ animationDelay: arrow.delay }}>
-                    <line x1="-10" y1="0" x2="8" y2="0" className="wind-arrow-shaft" />
-                    <polyline points="3,-4 8,0 3,4" className="wind-arrow-head" />
+                    <line x1={arrow.tailX} y1="0" x2={arrow.headX} y2="0" className="wind-arrow-shaft" />
+                    <polyline
+                      points={`${arrow.headInsetX},${-arrow.headHeightY} ${arrow.headX},0 ${arrow.headInsetX},${arrow.headHeightY}`}
+                      className="wind-arrow-head"
+                    />
                   </g>
                 </g>
               ))}
             </g>
           )}
 
-          <CarMarkerLayer markers={carMarkers} />
+          <CarMarkerLayer markers={carMarkers} baseStrokeUnit={baseStrokeUnit} />
         </g>
 
         {/* Tooltip */}

@@ -353,4 +353,34 @@ describe('TP-BH-0012 Bahrain circuit map', () => {
     });
     expect(segmentPaths).toMatchSnapshot();
   });
+
+  it('scales segment, wind arrow, and car marker strokes from circuit width', () => {
+    const scaledCircuit = {
+      ...bahrainCircuit,
+      width: 600,
+      height: 350
+    };
+
+    const { container } = render(
+      <CircuitMap
+        circuit={scaledCircuit}
+        activeLayer="Wind"
+        windDirectionDeg={300}
+        carMarkers={[{ id: 'driver-1', label: '#1', x: 120, y: 120 }]}
+      />
+    );
+
+    const segmentPath = container.querySelector('.segment');
+    expect(segmentPath).toHaveAttribute('stroke-width', '4');
+
+    const windArrowShaft = container.querySelector('.wind-arrow-shaft');
+    expect(windArrowShaft).toBeInTheDocument();
+    expect(windArrowShaft).toHaveAttribute('x1', '-5');
+    expect(windArrowShaft).toHaveAttribute('x2', '4');
+
+    const carMarkerCore = container.querySelector('.replay-car-marker-core');
+    expect(carMarkerCore).toBeInTheDocument();
+    expect(carMarkerCore).toHaveAttribute('r', '2');
+    expect(carMarkerCore).toHaveStyle({ '--replay-car-core-stroke-width': '0.5' });
+  });
 });

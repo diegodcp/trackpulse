@@ -37,12 +37,12 @@
 .segment:focus {
   outline: none;
   opacity: 0.9;
-  stroke-width: 10px;
+  stroke-width: var(--segment-hover-stroke-width, 10px);
 }
 
 .segment.is-hovered {
   opacity: 0.9;
-  stroke-width: 10px;
+  stroke-width: var(--segment-hover-stroke-width, 10px);
 }
 
 /* Segment type styling */
@@ -144,7 +144,7 @@
 .wind-arrow-shaft,
 .wind-arrow-head {
   stroke: #8dd8ff;
-  stroke-width: 1.6;
+  stroke-width: var(--wind-arrow-stroke-width, 1.6);
   fill: none;
 }
 
@@ -154,14 +154,14 @@
   }
   50% {
     opacity: 1;
-    stroke-width: 2;
+    stroke-width: var(--wind-arrow-pulse-stroke-width, 2);
   }
   70% {
     opacity: 0.8;
   }
   100% {
     opacity: 0.35;
-    stroke-width: 1.6;
+    stroke-width: var(--wind-arrow-stroke-width, 1.6);
   }
 }
 
@@ -173,12 +173,12 @@
 .replay-car-marker-core {
   fill: #ff8f00;
   stroke: #ffe2b3;
-  stroke-width: 1;
+  stroke-width: var(--replay-car-core-stroke-width, 1);
 }
 
 .replay-car-marker-label {
   fill: #ffe2b3;
-  font-size: 9px;
+  font-size: var(--replay-car-label-font-size, 9px);
   font-weight: 700;
 }
 
