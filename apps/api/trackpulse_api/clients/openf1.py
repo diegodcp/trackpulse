@@ -41,7 +41,7 @@ class OpenF1ClientProtocol(Protocol):
 class OpenF1Client:
     """Concrete HTTP client for OpenF1 API."""
 
-    def __init__(self, base_url: str, timeout: float = 60.0):
+    def __init__(self, base_url: str, timeout: float = 120.0):
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
 
@@ -127,6 +127,8 @@ class OpenF1Client:
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 response = await client.get(f"{self._base_url}{path}", params=params)
+                if response.status_code in (404, 422):
+                    return []  # OpenF1 returns 404/422 when no data exists or params are invalid
                 if response.status_code != 200:
                     raise OpenF1UnavailableError(
                         f"OpenF1 returned status {response.status_code}"

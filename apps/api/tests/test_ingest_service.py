@@ -211,8 +211,13 @@ class TestIngestService:
 
         # Verify all client methods called
         mock_client.get_drivers.assert_called_once_with(TEST_SESSION_KEY)
-        mock_client.get_location.assert_called_once_with(TEST_SESSION_KEY)
-        mock_client.get_car_data.assert_called_once_with(TEST_SESSION_KEY)
+        # location and car_data are called per-driver (2 drivers in fixture)
+        assert mock_client.get_location.call_count == 2
+        mock_client.get_location.assert_any_call(TEST_SESSION_KEY, driver_number=1)
+        mock_client.get_location.assert_any_call(TEST_SESSION_KEY, driver_number=16)
+        assert mock_client.get_car_data.call_count == 2
+        mock_client.get_car_data.assert_any_call(TEST_SESSION_KEY, driver_number=1)
+        mock_client.get_car_data.assert_any_call(TEST_SESSION_KEY, driver_number=16)
         mock_client.get_weather.assert_called_once_with(TEST_SESSION_KEY)
         mock_client.get_laps.assert_called_once_with(TEST_SESSION_KEY)
         mock_client.get_stints.assert_called_once_with(TEST_SESSION_KEY)
@@ -343,4 +348,4 @@ class TestIngestService:
         assert progress["status"] == "complete"
         assert progress["rows_ingested"]["drivers"] == 2
         assert progress["rows_ingested"]["weather"] == 1
-        assert progress["rows_ingested"]["location"] == 1
+        assert progress["rows_ingested"]["location"] == 2

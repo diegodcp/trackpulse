@@ -20,6 +20,62 @@ from trackpulse_api.db.models.weather_sample import WeatherSample
 
 logger = logging.getLogger(__name__)
 
+# Map OpenF1 race_control category values to DB enum values (case-insensitive)
+_RACE_CONTROL_CATEGORY_MAP = {
+    "flag": "Flag",
+    "safetycar": "SafetyCar",
+    "drs": "Drs",
+    "carevent": "CarEvent",
+    "sessionstatus": "SessionStatus",
+    "other": "Other",
+}
+
+
+def _normalize_race_control_category(raw_value: str | None) -> str:
+    """Normalize OpenF1 race_control category to match DB enum values."""
+    if not raw_value:
+        return "Other"
+    return _RACE_CONTROL_CATEGORY_MAP.get(raw_value.lower(), "Other")
+
+
+# Valid flag_type enum values in the database
+_VALID_FLAG_TYPES = {"GREEN", "YELLOW", "DOUBLE_YELLOW", "RED", "CHEQUERED", "BLACK_AND_WHITE", "BLUE", "VSC"}
+
+
+def _normalize_flag(raw_value: str | None) -> str | None:
+    """Normalize OpenF1 flag value; return None for unknown flags."""
+    if not raw_value:
+        return None
+    upper = raw_value.upper()
+    if upper in _VALID_FLAG_TYPES:
+        return upper
+    return None
+
+
+_VALID_TYRE_COMPOUNDS = {"SOFT", "MEDIUM", "HARD", "INTERMEDIATE", "WET"}
+
+
+def _normalize_compound(raw_value: str | None) -> str:
+    """Normalize OpenF1 tyre compound; default to MEDIUM for unknown values."""
+    if not raw_value:
+        return "MEDIUM"
+    upper = raw_value.upper()
+    if upper in _VALID_TYRE_COMPOUNDS:
+        return upper
+    return "MEDIUM"
+
+
+def _safe_float(value) -> float | None:
+    """Convert a value to float, returning None for non-numeric strings."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
 
 def _parse_dt(value) -> datetime | None:
     """Parse an ISO datetime string into a Python datetime."""
@@ -87,6 +143,7 @@ class IngestService:
 
             await self._update_session_status(session_key, "complete")
         except Exception:
+            await self._db.rollback()
             await self._update_session_status(session_key, "failed")
             raise
 
@@ -121,7 +178,7 @@ class IngestService:
         for stage, model, fk_col in stage_checks:
             count = await self._count_rows(model, session_id)
             rows_ingested[stage.value] = count
-            if count > 0:
+            if count > 0 or status == "complete":
                 stages_complete.append(stage.value)
             else:
                 stages_remaining.append(stage.value)
@@ -185,43 +242,51 @@ class IngestService:
         if count > 0:
             return
 
-        raw = await self._client.get_location(session_key)
-        records = [
-            {
-                "session_id": session_id,
-                "driver_number": r.get("driver_number"),
-                "timestamp": _parse_dt(r.get("date")),
-                "x": r.get("x"),
-                "y": r.get("y"),
-                "z": r.get("z"),
-            }
-            for r in raw
-        ]
-        await self._bulk_insert(CarPosition, records)
-        logger.info("Ingested %d car positions for session %d", len(records), session_key)
+        driver_numbers = await self._get_driver_numbers(session_id)
+        total = 0
+        for dn in driver_numbers:
+            raw = await self._client.get_location(session_key, driver_number=dn)
+            records = [
+                {
+                    "session_id": session_id,
+                    "driver_number": r.get("driver_number"),
+                    "timestamp": _parse_dt(r.get("date")),
+                    "x": r.get("x"),
+                    "y": r.get("y"),
+                    "z": r.get("z"),
+                }
+                for r in raw
+            ]
+            await self._bulk_insert(CarPosition, records)
+            total += len(records)
+        logger.info("Ingested %d car positions for session %d", total, session_key)
 
     async def _ingest_car_data(self, session_key: int, session_id: int) -> None:
         count = await self._count_rows(CarTelemetry, session_id)
         if count > 0:
             return
 
-        raw = await self._client.get_car_data(session_key)
-        records = [
-            {
-                "session_id": session_id,
-                "driver_number": r.get("driver_number"),
-                "timestamp": _parse_dt(r.get("date")),
-                "speed": r.get("speed", 0),
-                "throttle": r.get("throttle"),
-                "brake": r.get("brake"),
-                "n_gear": r.get("n_gear"),
-                "rpm": r.get("rpm"),
-                "drs": r.get("drs"),
-            }
-            for r in raw
-        ]
-        await self._bulk_insert(CarTelemetry, records)
-        logger.info("Ingested %d car telemetry for session %d", len(records), session_key)
+        driver_numbers = await self._get_driver_numbers(session_id)
+        total = 0
+        for dn in driver_numbers:
+            raw = await self._client.get_car_data(session_key, driver_number=dn)
+            records = [
+                {
+                    "session_id": session_id,
+                    "driver_number": r.get("driver_number"),
+                    "timestamp": _parse_dt(r.get("date")),
+                    "speed": r.get("speed", 0),
+                    "throttle": r.get("throttle"),
+                    "brake": r.get("brake"),
+                    "n_gear": r.get("n_gear"),
+                    "rpm": r.get("rpm"),
+                    "drs": r.get("drs"),
+                }
+                for r in raw
+            ]
+            await self._bulk_insert(CarTelemetry, records)
+            total += len(records)
+        logger.info("Ingested %d car telemetry for session %d", total, session_key)
 
     async def _ingest_laps(self, session_key: int, session_id: int) -> None:
         count = await self._count_rows(Lap, session_id)
@@ -263,7 +328,7 @@ class IngestService:
                 "session_id": session_id,
                 "driver_number": r.get("driver_number"),
                 "stint_number": r.get("stint_number"),
-                "compound": r.get("compound", "MEDIUM"),
+                "compound": _normalize_compound(r.get("compound")),
                 "lap_start": r.get("lap_start", 1),
                 "lap_end": r.get("lap_end"),
                 "tyre_age_at_start": r.get("tyre_age_at_start", 0),
@@ -283,8 +348,8 @@ class IngestService:
             {
                 "session_id": session_id,
                 "timestamp": _parse_dt(r.get("date")),
-                "category": r.get("category", "Other"),
-                "flag": r.get("flag"),
+                "category": _normalize_race_control_category(r.get("category")),
+                "flag": _normalize_flag(r.get("flag")),
                 "scope": r.get("scope"),
                 "sector": r.get("sector"),
                 "driver_number": r.get("driver_number"),
@@ -307,8 +372,8 @@ class IngestService:
                 "session_id": session_id,
                 "driver_number": r.get("driver_number"),
                 "timestamp": _parse_dt(r.get("date")),
-                "gap_to_leader": r.get("gap_to_leader"),
-                "interval_ahead": r.get("interval"),
+                "gap_to_leader": _safe_float(r.get("gap_to_leader")),
+                "interval_ahead": _safe_float(r.get("interval")),
             }
             for r in raw
         ]
@@ -373,6 +438,13 @@ class IngestService:
             )
         )
         return result.scalar_one()
+
+    async def _get_driver_numbers(self, session_id: int) -> list[int]:
+        """Get all driver numbers for a session from the drivers table."""
+        result = await self._db.execute(
+            select(Driver.driver_number).where(Driver.session_id == session_id)
+        )
+        return [row[0] for row in result.all()]
 
     async def _update_session_status(self, session_key: int, status: str) -> None:
         """Update ingest_status on the sessions table."""

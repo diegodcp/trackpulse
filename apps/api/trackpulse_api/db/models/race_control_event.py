@@ -13,8 +13,11 @@ class RaceControlEvent(Base):
     id = Column(Integer, primary_key=True)
     session_id = Column(Integer, ForeignKey("sessions.id"), nullable=False)
     timestamp = Column(DateTime(timezone=True), nullable=False)
-    category = Column(Enum(RaceControlCategory, name="race_control_category"), nullable=False)
-    flag = Column(Enum(FlagType, name="flag_type"))
+    category = Column(
+        Enum(RaceControlCategory, name="race_control_category", values_callable=lambda e: [x.value for x in e]),
+        nullable=False,
+    )
+    flag = Column(Enum(FlagType, name="flag_type", values_callable=lambda e: [x.value for x in e]))
     scope = Column(String(20))
     sector = Column(SmallInteger)
     driver_number = Column(SmallInteger)
