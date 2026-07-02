@@ -37,10 +37,17 @@ class OpenF1HistoricalClient:
         self._http_client = http_client
         self._logger = logging.getLogger(__name__)
 
-    async def get_weather(self, *, session_key: int | None = None) -> list[OpenF1Weather]:
+    async def get_weather(
+        self,
+        *,
+        session_key: int | None = None,
+        limit: int | None = None,
+    ) -> list[OpenF1Weather]:
         params: dict[str, int] = {}
         if session_key is not None:
             params["session_key"] = session_key
+        if limit is not None:
+            params["_limit"] = limit
         payload = await self._get_list("/v1/weather", params=params)
         return [OpenF1Weather.model_validate(item) for item in payload]
 

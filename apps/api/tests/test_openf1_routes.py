@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import json
 from collections.abc import Generator
+from datetime import datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from trackpulse_api.openf1 import OpenF1RequestError, OpenF1Session, OpenF1Weather
+from trackpulse_api.routes import openf1 as openf1_routes
 from trackpulse_api.main import create_app
-from trackpulse_api.settings import get_settings
+from trackpulse_api.settings import AppSettings, get_settings
 
 
 @pytest.fixture(autouse=True)
@@ -255,3 +258,98 @@ async def test_openf1_proxy_uses_default_committed_fixture_data() -> None:
     assert payload["data"]["track_temperature"] == pytest.approx(43.2)
     assert payload["data"]["air_temperature"] == pytest.approx(27.4)
     assert payload["data"]["rainfall"] is False
+
+
+@pytest.mark.asyncio
+async def test_openf1_weather_latest_historical_caches_session_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class StubClient:
+        def __init__(self) -> None:
+            self.discover_session_calls = 0
+            self.get_weather_calls = 0
+            self.last_weather_limit: int | None = None
+
+        async def discover_session(self, query) -> OpenF1Session:  # noqa: ANN001
+            self.discover_session_calls += 1
+            return OpenF1Session(
+                session_key=9150,
+                session_name=query.session_name,
+                country_name=query.country_name,
+                year=query.year,
+            )
+
+        async def get_weather(self, *, session_key: int | None = None, limit: int | None = None) -> list[OpenF1Weather]:
+            self.get_weather_calls += 1
+            self.last_weather_limit = limit
+            return [
+                OpenF1Weather(
+                    date=datetime.fromisoformat("2023-03-05T15:02:00+00:00"),
+                    session_key=session_key,
+                    track_temperature=44.1,
+                    air_temperature=30.1,
+                    wind_speed=3.2,
+                    wind_direction=196,
+                    rainfall=False,
+                )
+            ]
+
+    stub_client = StubClient()
+    monkeypatch.setattr(openf1_routes, "_build_client", lambda settings: stub_client)
+
+    app = create_app(
+        AppSettings(
+            openf1_mode="historical",
+            openf1_seed_year=2023,
+            openf1_seed_country_name="Bahrain",
+            openf1_seed_session_name="Race",
+        )
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        first = await client.get("/api/v1/openf1/weather/latest")
+        second = await client.get("/api/v1/openf1/weather/latest")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["data"]["track_temperature"] == pytest.approx(44.1)
+    assert second.json()["data"]["track_temperature"] == pytest.approx(44.1)
+    assert stub_client.discover_session_calls == 1
+    assert stub_client.get_weather_calls == 2
+    assert stub_client.last_weather_limit == 1
+
+
+@pytest.mark.asyncio
+async def test_openf1_weather_latest_historical_returns_503_when_openf1_unreachable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingClient:
+        async def discover_session(self, query) -> OpenF1Session:  # noqa: ANN001
+            return OpenF1Session(
+                session_key=9150,
+                session_name=query.session_name,
+                country_name=query.country_name,
+                year=query.year,
+            )
+
+        async def get_weather(self, *, session_key: int | None = None, limit: int | None = None) -> list[OpenF1Weather]:
+            raise OpenF1RequestError("network down")
+
+    monkeypatch.setattr(openf1_routes, "_build_client", lambda settings: FailingClient())
+
+    app = create_app(
+        AppSettings(
+            openf1_mode="historical",
+            openf1_seed_year=2023,
+            openf1_seed_country_name="Bahrain",
+            openf1_seed_session_name="Race",
+        )
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/openf1/weather/latest")
+
+    payload = response.json()
+    assert response.status_code == 503
+    assert payload["error"]["code"] == "openf1_unavailable"
+    assert "unavailable" in payload["error"]["message"].lower()

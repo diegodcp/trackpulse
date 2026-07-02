@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Generic, TypeVar
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ValidationError
 
@@ -126,6 +126,26 @@ async def _discover_seed_session(
     )
 
 
+async def _discover_cached_seed_session_key(
+    request: Request,
+    client: OpenF1HistoricalClient,
+    settings: AppSettings,
+) -> int:
+    cached_session_key = getattr(request.app.state, "cached_session_key", None)
+    if isinstance(cached_session_key, int):
+        return cached_session_key
+
+    session = await client.discover_session(
+        SessionDiscoveryQuery(
+            year=settings.openf1_seed_year,
+            country_name=settings.openf1_seed_country_name,
+            session_name=settings.openf1_seed_session_name,
+        )
+    )
+    request.app.state.cached_session_key = session.session_key
+    return session.session_key
+
+
 def _sort_weather_records(records: list[OpenF1Weather]) -> list[OpenF1Weather]:
     return sorted(records, key=lambda record: record.date)
 
@@ -195,12 +215,28 @@ async def latest_session(settings: AppSettings = Depends(get_app_settings)) -> A
 
 
 @router.get("/openf1/weather/latest", response_model=ApiResponse[OpenF1Weather])
-async def latest_weather(settings: AppSettings = Depends(get_app_settings)) -> ApiResponse[OpenF1Weather] | JSONResponse:
+async def latest_weather(
+    request: Request,
+    settings: AppSettings = Depends(get_app_settings),
+) -> ApiResponse[OpenF1Weather] | JSONResponse:
     client = _build_client(settings)
 
     try:
-        session = await _discover_seed_session(client, settings)
-        records = _sort_weather_records(await client.get_weather(session_key=session.session_key))
+        session_key = await _discover_cached_seed_session_key(request, client, settings)
+
+        if settings.openf1_mode == "historical":
+            records = await client.get_weather(session_key=session_key, limit=1)
+            if not records:
+                return _error(404, "openf1_weather_not_found", "No OpenF1 weather records were available.")
+            return _success(records[0])
+
+        records = _sort_weather_records(await client.get_weather(session_key=session_key))
+    except OpenF1RequestError:
+        return _error(
+            503,
+            "openf1_unavailable",
+            "OpenF1 is currently unavailable while fetching weather data.",
+        )
     except Exception as exc:  # noqa: BLE001
         return _map_openf1_exception(exc)
 
