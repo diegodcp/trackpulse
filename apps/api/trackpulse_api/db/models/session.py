@@ -13,7 +13,10 @@ class Session(Base):
     session_key = Column(Integer, unique=True, nullable=False)
     meeting_id = Column(Integer, ForeignKey("meetings.id"), nullable=False, index=True)
     session_name = Column(String(30), nullable=False)
-    session_type = Column(Enum(SessionType, name="session_type"), nullable=False)
+    session_type = Column(
+        Enum(SessionType, name="session_type", values_callable=lambda e: [x.value for x in e]),
+        nullable=False,
+    )
     date_start = Column(DateTime(timezone=True), nullable=False)
     date_end = Column(DateTime(timezone=True))
     ingested_at = Column(DateTime(timezone=True))
