@@ -19,7 +19,7 @@ class OpenF1ClientProtocol(Protocol):
     async def get_location(
         self,
         session_key: int,
-        driver_number: int,
+        driver_number: int | None = None,
         date_start: str | None = None,
         date_end: str | None = None,
     ) -> list[dict]: ...
@@ -28,12 +28,20 @@ class OpenF1ClientProtocol(Protocol):
         session_key: int,
         driver_number: int | None = None,
     ) -> list[dict]: ...
+    async def get_car_data(self, session_key: int, driver_number: int | None = None) -> list[dict]: ...
+    async def get_weather(self, session_key: int) -> list[dict]: ...
+    async def get_stints(self, session_key: int) -> list[dict]: ...
+    async def get_race_control(self, session_key: int) -> list[dict]: ...
+    async def get_intervals(self, session_key: int) -> list[dict]: ...
+    async def get_positions(self, session_key: int) -> list[dict]: ...
+    async def get_pit_stops(self, session_key: int) -> list[dict]: ...
+    async def get_drivers(self, session_key: int) -> list[dict]: ...
 
 
 class OpenF1Client:
     """Concrete HTTP client for OpenF1 API."""
 
-    def __init__(self, base_url: str, timeout: float = 30.0):
+    def __init__(self, base_url: str, timeout: float = 60.0):
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
 
@@ -51,20 +59,34 @@ class OpenF1Client:
     async def get_location(
         self,
         session_key: int,
-        driver_number: int,
+        driver_number: int | None = None,
         date_start: str | None = None,
         date_end: str | None = None,
     ) -> list[dict]:
         """GET /location?session_key={key}&driver_number={driver}"""
-        params: dict[str, int | str] = {
-            "session_key": session_key,
-            "driver_number": driver_number,
-        }
+        params: dict[str, int | str] = {"session_key": session_key}
+        if driver_number is not None:
+            params["driver_number"] = driver_number
         if date_start:
             params["date>"] = date_start
         if date_end:
             params["date<"] = date_end
         return await self._get("/location", params)
+
+    async def get_car_data(
+        self,
+        session_key: int,
+        driver_number: int | None = None,
+    ) -> list[dict]:
+        """GET /car_data?session_key={key}"""
+        params: dict[str, int | str] = {"session_key": session_key}
+        if driver_number is not None:
+            params["driver_number"] = driver_number
+        return await self._get("/car_data", params)
+
+    async def get_weather(self, session_key: int) -> list[dict]:
+        """GET /weather?session_key={key}"""
+        return await self._get("/weather", {"session_key": session_key})
 
     async def get_laps(
         self,
@@ -76,6 +98,30 @@ class OpenF1Client:
         if driver_number is not None:
             params["driver_number"] = driver_number
         return await self._get("/laps", params)
+
+    async def get_stints(self, session_key: int) -> list[dict]:
+        """GET /stints?session_key={key}"""
+        return await self._get("/stints", {"session_key": session_key})
+
+    async def get_race_control(self, session_key: int) -> list[dict]:
+        """GET /race_control?session_key={key}"""
+        return await self._get("/race_control", {"session_key": session_key})
+
+    async def get_intervals(self, session_key: int) -> list[dict]:
+        """GET /intervals?session_key={key}"""
+        return await self._get("/intervals", {"session_key": session_key})
+
+    async def get_positions(self, session_key: int) -> list[dict]:
+        """GET /position?session_key={key}"""
+        return await self._get("/position", {"session_key": session_key})
+
+    async def get_pit_stops(self, session_key: int) -> list[dict]:
+        """GET /pit?session_key={key}"""
+        return await self._get("/pit", {"session_key": session_key})
+
+    async def get_drivers(self, session_key: int) -> list[dict]:
+        """GET /drivers?session_key={key}"""
+        return await self._get("/drivers", {"session_key": session_key})
 
     async def _get(self, path: str, params: dict) -> list[dict]:
         try:

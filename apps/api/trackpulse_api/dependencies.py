@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from trackpulse_api.clients.openf1 import OpenF1Client
 from trackpulse_api.config import Settings
 from trackpulse_api.services.circuit_service import CircuitService
+from trackpulse_api.services.ingest_service import IngestService
 from trackpulse_api.services.session_discovery import SessionDiscoveryService
 
 
@@ -41,3 +42,11 @@ async def get_circuit_service(
 ) -> CircuitService:
     client = get_openf1_client(request)
     return CircuitService(openf1_client=client, db_session=db_session)
+
+
+async def get_ingest_service(
+    request: Request,
+    db_session: AsyncSession = Depends(get_db_session),
+) -> IngestService:
+    client = get_openf1_client(request)
+    return IngestService(openf1_client=client, db_session=db_session)
