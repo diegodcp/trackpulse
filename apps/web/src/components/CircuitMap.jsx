@@ -1,6 +1,11 @@
 import { useState } from 'react';
 import { CarMarkerLayer } from './CarMarkerLayer';
 import { CornerEvolutionLayer, getCornerEvolutionState } from './CornerEvolutionLayer';
+import {
+  TrackTempLayer,
+  formatTrackTempTooltip,
+  resolveTrackTemperatureC
+} from './TrackTempLayer';
 import '../styles/circuit-map.css';
 
 function normalizeAngleDeg(angleDeg) {
@@ -113,6 +118,7 @@ export function CircuitMap({
   activeLayer,
   windDirectionDeg = null,
   windSpeedMs = null,
+  globalTrackTemperatureC = null,
   carMarkers = [],
   segmentStates = []
 }) {
@@ -262,6 +268,14 @@ export function CircuitMap({
             );
           })}
 
+          <TrackTempLayer
+            activeLayer={activeLayer}
+            segments={segments}
+            segmentStateById={segmentStateById}
+            globalTrackTemperatureC={globalTrackTemperatureC}
+            baseStrokeUnit={baseStrokeUnit}
+          />
+
           <CornerEvolutionLayer
             activeLayer={activeLayer}
             segments={segments}
@@ -310,7 +324,7 @@ export function CircuitMap({
               x="-70"
               y="0"
               width="140"
-              height="250"
+              height="270"
               rx="4"
               className="tooltip-box"
             />
@@ -352,6 +366,14 @@ export function CircuitMap({
             </text>
             <text x="0" y="238" className="tooltip-info" textAnchor="middle">
               Truth Label: {cornerEvolutionState.truthLabel}
+            </text>
+            <text x="0" y="256" className="tooltip-info" textAnchor="middle">
+              {formatTrackTempTooltip(
+                resolveTrackTemperatureC(
+                  segmentStateById.get(hoveredSegment.segmentId),
+                  globalTrackTemperatureC
+                ).valueC
+              )}
             </text>
           </g>
             );

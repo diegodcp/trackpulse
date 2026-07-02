@@ -135,6 +135,14 @@
   pointer-events: none;
 }
 
+.track-temp-overlay {
+  mix-blend-mode: screen;
+}
+
+.track-temp-path {
+  pointer-events: none;
+}
+
 .wind-arrow {
   transform-box: fill-box;
   transform-origin: center;

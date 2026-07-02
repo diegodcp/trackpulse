@@ -273,6 +273,7 @@ export function TrackMapPanel({ activeLayer }) {
           activeLayer={activeLayer}
           windDirectionDeg={snapshotQuery.data?.weather?.wind_direction_deg ?? null}
           windSpeedMs={snapshotQuery.data?.weather?.wind_speed_ms ?? null}
+          globalTrackTemperatureC={snapshotQuery.data?.weather?.track_temperature_c ?? null}
           carMarkers={replayMarker}
           segmentStates={snapshotQuery.data?.segment_states ?? []}
         />
