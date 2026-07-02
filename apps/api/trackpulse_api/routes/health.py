@@ -1,4 +1,5 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
+from sqlalchemy import text
 
 router = APIRouter(prefix="/health", tags=["health"])
 
@@ -10,6 +11,19 @@ def liveness():
 
 
 @router.get("/ready")
-def readiness():
-    """Readiness probe — checks dependencies."""
-    return {"status": "ok", "dependencies": {}}
+async def readiness(request: Request):
+    """Readiness probe — checks dependencies including DB connectivity."""
+    dependencies: dict[str, str] = {}
+
+    session_factory = getattr(request.app.state, "db_session_factory", None)
+    if session_factory is not None:
+        try:
+            async with session_factory() as session:
+                await session.execute(text("SELECT 1"))
+            dependencies["db"] = "ok"
+        except Exception as e:
+            dependencies["db"] = f"error: {e}"
+
+    all_ok = all(v == "ok" for v in dependencies.values())
+    status = "ok" if all_ok else "degraded"
+    return {"status": status, "dependencies": dependencies}

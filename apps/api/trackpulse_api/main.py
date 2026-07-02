@@ -4,14 +4,20 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from trackpulse_api.config import Settings
+from trackpulse_api.db.engine import create_engine, create_session_factory
 from trackpulse_api.routes.health import router as health_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
+    # Startup — initialize DB engine and session factory
+    settings: Settings = app.state.settings
+    engine = create_engine(settings.database_url)
+    app.state.db_engine = engine
+    app.state.db_session_factory = create_session_factory(engine)
     yield
-    # Shutdown
+    # Shutdown — dispose engine
+    await engine.dispose()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -19,6 +25,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         settings = Settings()
 
     app = FastAPI(title=settings.app_name, debug=settings.debug, lifespan=lifespan)
+
+    app.state.settings = settings
 
     app.add_middleware(
         CORSMiddleware,
