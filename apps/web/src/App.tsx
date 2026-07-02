@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppProvider, useAppContext } from './context/AppContext';
 import { SessionSelector } from './components/SessionSelector';
+import { CircuitCanvas } from './components/CircuitCanvas';
 import './App.css';
 
 const queryClient = new QueryClient({
@@ -29,7 +30,7 @@ function AppContent() {
         {!selectedSessionName ? (
           <SessionSelector />
         ) : (
-          <p className="app__placeholder">Session loaded: {selectedSessionName}</p>
+          <CircuitCanvas />
         )}
       </main>
     </div>

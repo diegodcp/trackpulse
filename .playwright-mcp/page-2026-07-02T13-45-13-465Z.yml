@@ -1,0 +1,16 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - heading "TrackPulse" [level=1] [ref=e5]
+  - main [ref=e6]:
+    - generic [ref=e7]:
+      - generic [ref=e8]:
+        - generic [ref=e10]: Session Select
+        - generic [ref=e11]:
+          - combobox [ref=e12] [cursor=pointer]:
+            - option "2023"
+            - option "2024" [selected]
+            - option "2025"
+            - option "2026"
+          - combobox [disabled] [ref=e13]:
+            - option "All Circuits" [selected]
+      - paragraph [ref=e17]: Loading sessions…
