@@ -3,12 +3,16 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Generator
+from datetime import datetime, timezone
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from trackpulse_api.main import create_app
+from trackpulse_api.openf1 import OpenF1Location, OpenF1Session, OpenF1Weather
+from trackpulse_api.routes import replay as replay_routes
 from trackpulse_api.routes.replay import _controller, _track_state_sse_events
+from trackpulse_api.settings import AppSettings
 from trackpulse_api.settings import get_settings
 
 
@@ -291,3 +295,205 @@ async def test_track_state_sse_stream_emits_track_state_and_heartbeat_events(
         "replay_status": "idle",
         "event_type": "heartbeat",
     }
+
+
+@pytest.mark.asyncio
+async def test_track_state_latest_historical_uses_batched_location_fetch_and_cached_session_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class StubClient:
+        def __init__(self) -> None:
+            self.discover_session_calls = 0
+            self.get_weather_calls = 0
+            self.get_location_batch_calls = 0
+            self.last_location_batch_limit: int | None = None
+            self.last_location_batch_drivers: tuple[int, ...] = ()
+
+        async def discover_session(self, query) -> OpenF1Session:  # noqa: ANN001
+            self.discover_session_calls += 1
+            return OpenF1Session(
+                session_key=9150,
+                session_name=query.session_name,
+                country_name=query.country_name,
+                year=query.year,
+            )
+
+        async def get_weather(self, *, session_key: int | None = None, limit: int | None = None) -> list[OpenF1Weather]:
+            self.get_weather_calls += 1
+            return [
+                OpenF1Weather(
+                    date=datetime.fromisoformat("2023-03-05T15:02:00+00:00"),
+                    session_key=session_key,
+                    track_temperature=44.1,
+                    air_temperature=30.1,
+                    wind_speed=3.2,
+                    wind_direction=196,
+                    rainfall=False,
+                )
+            ]
+
+        async def get_location_batch(
+            self,
+            *,
+            session_key: int,
+            driver_numbers: tuple[int, ...] | list[int],
+            limit: int | None = None,
+        ) -> dict[int, list[OpenF1Location]]:
+            self.get_location_batch_calls += 1
+            self.last_location_batch_limit = limit
+            self.last_location_batch_drivers = tuple(driver_numbers)
+            return {
+                1: [
+                    OpenF1Location(
+                        date=datetime(2023, 3, 5, 15, 2, 0, tzinfo=timezone.utc),
+                        driver_number=1,
+                        session_key=session_key,
+                        x=100.0,
+                        y=200.0,
+                    ),
+                    OpenF1Location(
+                        date=datetime(2023, 3, 5, 15, 2, 1, tzinfo=timezone.utc),
+                        driver_number=1,
+                        session_key=session_key,
+                        x=104.0,
+                        y=204.0,
+                    ),
+                ],
+                11: [
+                    OpenF1Location(
+                        date=datetime(2023, 3, 5, 15, 2, 2, tzinfo=timezone.utc),
+                        driver_number=11,
+                        session_key=session_key,
+                        x=108.0,
+                        y=208.0,
+                    )
+                ],
+            }
+
+    stub_client = StubClient()
+    monkeypatch.setattr(replay_routes, "_build_openf1_client", lambda request: stub_client)
+
+    app = create_app(
+        AppSettings(
+            openf1_mode="historical",
+            openf1_seed_year=2023,
+            openf1_seed_country_name="Bahrain",
+            openf1_seed_session_name="Race",
+        )
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        first_response = await client.get("/api/v1/track-state/latest")
+        second_response = await client.get("/api/v1/track-state/latest")
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+
+    first_snapshot = first_response.json()["snapshot"]
+    assert first_snapshot["session_key"] == 9150
+    assert first_snapshot["weather"]["available"] is True
+    assert first_snapshot["weather"]["truth_label"] == "measured"
+    assert len(first_snapshot["car_markers"]) == 2
+    assert len(first_snapshot["segment_states"]) == 16
+
+    assert stub_client.discover_session_calls == 1
+    assert stub_client.get_weather_calls == 2
+    assert stub_client.get_location_batch_calls == 2
+    assert stub_client.last_location_batch_limit == 5
+    assert stub_client.last_location_batch_drivers == (1, 11, 14, 16, 44)
+
+
+@pytest.mark.asyncio
+async def test_track_state_latest_historical_keeps_replay_snapshot_when_running(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture_root = tmp_path / "bahrain-2023-race"
+    fixtures_dir = fixture_root / "golden"
+    fixtures_dir.mkdir(parents=True)
+
+    _write_fixture(
+        fixtures_dir,
+        "sessions",
+        [
+            {
+                "session_key": 9149,
+                "session_name": "Race",
+                "meeting_key": 1210,
+                "country_name": "Bahrain",
+                "year": 2023,
+                "date_start": "2023-03-05T15:00:00+00:00",
+            }
+        ],
+    )
+    _write_fixture(
+        fixtures_dir,
+        "location",
+        [
+            {
+                "date": "2023-03-05T15:00:00.000+00:00",
+                "driver_number": 1,
+                "session_key": 9149,
+                "x": 10.0,
+                "y": 20.0,
+            },
+            {
+                "date": "2023-03-05T15:00:02.000+00:00",
+                "driver_number": 1,
+                "session_key": 9149,
+                "x": 10.2,
+                "y": 20.2,
+            },
+        ],
+    )
+    _write_fixture(
+        fixtures_dir,
+        "weather",
+        [
+            {
+                "date": "2023-03-05T15:00:00+00:00",
+                "session_key": 9149,
+                "track_temperature": 43.2,
+                "wind_speed": 2.7,
+                "wind_direction": 192,
+                "rainfall": False,
+            }
+        ],
+    )
+
+    monkeypatch.setenv("TRACKPULSE_OPENF1_MODE", "historical")
+    monkeypatch.setenv("TRACKPULSE_OPENF1_FIXTURE_DATA_DIR", str(fixtures_dir))
+
+    class GuardClient:
+        async def discover_session(self, query) -> OpenF1Session:  # noqa: ANN001
+            raise AssertionError("historical fallback should not run when replay is active")
+
+        async def get_weather(self, *, session_key: int | None = None, limit: int | None = None) -> list[OpenF1Weather]:
+            raise AssertionError("historical fallback should not run when replay is active")
+
+        async def get_location_batch(
+            self,
+            *,
+            session_key: int,
+            driver_numbers: tuple[int, ...] | list[int],
+            limit: int | None = None,
+        ) -> dict[int, list[OpenF1Location]]:
+            raise AssertionError("historical fallback should not run when replay is active")
+
+    monkeypatch.setattr(replay_routes, "_build_openf1_client", lambda request: GuardClient())
+
+    app = create_app()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        start_response = await client.post(
+            "/api/v1/replay/bahrain-2023-race/start",
+            json={"speed_multiplier": 20},
+        )
+        await asyncio.sleep(0.05)
+        track_state_response = await client.get("/api/v1/track-state/latest")
+
+    assert start_response.status_code == 200
+    assert track_state_response.status_code == 200
+    payload = track_state_response.json()["snapshot"]
+    assert payload["fixture_id"] == "bahrain-2023-race"
+    assert payload["replay_status"] in {"running", "completed"}

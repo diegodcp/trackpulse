@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ..inference import CircuitPoint, assign_nearest_segment
+from ..openf1 import OpenF1HistoricalClient, OpenF1Location, OpenF1RequestError, SessionDiscoveryQuery
 from ..replay.controller import (
     FixtureNotFoundError,
     FixtureReplayController,
@@ -31,6 +32,7 @@ from ..state import TrackSnapshot, TrackStateReducer
 router = APIRouter(prefix="/api/v1", tags=["replay"])
 
 SSE_STREAM_INTERVAL_SECONDS = 0.25
+SEED_DRIVER_NUMBERS: tuple[int, ...] = (1, 11, 14, 16, 44)
 
 
 class FixturesResponse(BaseModel):
@@ -95,6 +97,38 @@ def _controller(request: Request) -> FixtureReplayController:
         controller = FixtureReplayController(get_app_settings(request))
         request.app.state.replay_controller = controller
     return controller
+
+
+def _build_openf1_client(request: Request) -> OpenF1HistoricalClient:
+    settings = get_app_settings(request)
+    return OpenF1HistoricalClient(
+        base_url=settings.openf1_base_url,
+        mode=settings.openf1_mode,
+        bearer_token=settings.openf1_bearer_token,
+        timeout_seconds=settings.openf1_timeout_seconds,
+        max_retries=settings.openf1_max_retries,
+        fixture_data_dir=settings.openf1_fixture_data_dir,
+    )
+
+
+async def _discover_cached_seed_session_key(
+    request: Request,
+    client: OpenF1HistoricalClient,
+) -> int:
+    cached_session_key = getattr(request.app.state, "cached_session_key", None)
+    if isinstance(cached_session_key, int):
+        return cached_session_key
+
+    settings = get_app_settings(request)
+    session = await client.discover_session(
+        SessionDiscoveryQuery(
+            year=settings.openf1_seed_year,
+            country_name=settings.openf1_seed_country_name,
+            session_name=settings.openf1_seed_session_name,
+        )
+    )
+    request.app.state.cached_session_key = session.session_key
+    return session.session_key
 
 
 def _state_payload(snapshot: ReplayStateSnapshot) -> ReplayStateResponse:
@@ -200,6 +234,113 @@ def _track_snapshot_from_replay(snapshot: ReplayStateSnapshot) -> TrackSnapshot:
             "status": snapshot.status,
             "occurred_at": snapshot.replay_time,
             "payload": {"status": snapshot.status},
+        }
+    )
+    return reducer.snapshot()
+
+
+def _sort_locations(records: list[OpenF1Location]) -> list[OpenF1Location]:
+    return sorted(records, key=lambda record: (record.date, record.driver_number))
+
+
+def _coordinate_bounds_from_locations(records: list[OpenF1Location]) -> ReplayCoordinateBounds | None:
+    if not records:
+        return None
+
+    xs = [record.x for record in records]
+    ys = [record.y for record in records]
+    return ReplayCoordinateBounds(
+        min_x=min(xs),
+        max_x=max(xs),
+        min_y=min(ys),
+        max_y=max(ys),
+    )
+
+
+async def _track_snapshot_from_historical(
+    request: Request,
+    replay_snapshot: ReplayStateSnapshot,
+) -> TrackSnapshot:
+    client = _build_openf1_client(request)
+    session_key = await _discover_cached_seed_session_key(request, client)
+
+    weather_records = await client.get_weather(session_key=session_key, limit=1)
+    location_batches = await client.get_location_batch(
+        session_key=session_key,
+        driver_numbers=SEED_DRIVER_NUMBERS,
+        limit=5,
+    )
+
+    location_records = _sort_locations(
+        [record for records in location_batches.values() for record in records]
+    )
+    coordinate_bounds = _coordinate_bounds_from_locations(location_records)
+
+    reducer = TrackStateReducer(fixture_id=replay_snapshot.fixture_id)
+    latest_weather = weather_records[0] if weather_records else None
+    if latest_weather is not None:
+        reducer.apply_event(
+            {
+                "fixture_id": replay_snapshot.fixture_id,
+                "session_key": session_key,
+                "event_type": "weather",
+                "occurred_at": latest_weather.date.isoformat(),
+                "payload": {
+                    "track_temperature": latest_weather.track_temperature,
+                    "air_temperature": latest_weather.air_temperature,
+                    "humidity": latest_weather.humidity,
+                    "pressure": latest_weather.pressure,
+                    "rainfall": latest_weather.rainfall,
+                    "wind_direction": latest_weather.wind_direction,
+                    "wind_speed": latest_weather.wind_speed,
+                },
+            }
+        )
+
+    total_records = len(location_records)
+    for index, record in enumerate(location_records):
+        mapped_point = (
+            _project_location_to_map(
+                x=record.x,
+                y=record.y,
+                coordinate_bounds=coordinate_bounds,
+            )
+            if coordinate_bounds is not None
+            else CircuitPoint(x=record.x, y=record.y)
+        )
+        segment_id = assign_nearest_segment(point=mapped_point, segments=BAHRAIN_SEGMENT_PATHS).segment_id
+        normalized_progress = 0.0 if total_records <= 1 else index / max(1, total_records - 1)
+
+        reducer.apply_event(
+            {
+                "fixture_id": replay_snapshot.fixture_id,
+                "session_key": session_key,
+                "event_type": "location",
+                "driver_number": record.driver_number,
+                "occurred_at": record.date.isoformat(),
+                "payload": {
+                    "driver_number": record.driver_number,
+                    "x": mapped_point.x,
+                    "y": mapped_point.y,
+                    "z": record.z,
+                    "date": record.date.isoformat(),
+                    "segment_id": segment_id,
+                    "normalized_progress": normalized_progress,
+                },
+            }
+        )
+
+    reducer.apply_event(
+        {
+            "fixture_id": replay_snapshot.fixture_id,
+            "session_key": session_key,
+            "event_type": "replay.status",
+            "status": replay_snapshot.status,
+            "occurred_at": replay_snapshot.replay_time,
+            "payload": {
+                "status": replay_snapshot.status,
+                "connection_status": "connected",
+            },
         }
     )
     return reducer.snapshot()
@@ -370,9 +511,26 @@ async def replay_status(
 
 @router.get("/track-state/latest", response_model=TrackStateLatestResponse)
 async def latest_track_state(
+    request: Request,
     controller: FixtureReplayController = Depends(_controller),
 ) -> TrackStateLatestResponse:
-    return TrackStateLatestResponse(snapshot=_track_snapshot_from_replay(controller.snapshot()))
+    replay_snapshot = controller.snapshot()
+    settings = get_app_settings(request)
+
+    if replay_snapshot.status == "running":
+        return TrackStateLatestResponse(snapshot=_track_snapshot_from_replay(replay_snapshot))
+
+    if settings.openf1_mode == "historical":
+        try:
+            snapshot = await _track_snapshot_from_historical(request, replay_snapshot)
+        except OpenF1RequestError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="OpenF1 is currently unavailable while fetching track state data.",
+            ) from exc
+        return TrackStateLatestResponse(snapshot=snapshot)
+
+    return TrackStateLatestResponse(snapshot=_track_snapshot_from_replay(replay_snapshot))
 
 
 @router.get("/stream/track-state")

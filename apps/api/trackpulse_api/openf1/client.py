@@ -56,13 +56,42 @@ class OpenF1HistoricalClient:
         *,
         session_key: int,
         driver_number: int | None = None,
+        limit: int | None = None,
     ) -> list[OpenF1Location]:
         params: dict[str, int] = {"session_key": session_key}
         if driver_number is not None:
             params["driver_number"] = driver_number
+        if limit is not None:
+            params["_limit"] = limit
 
         payload = await self._get_list("/v1/location", params=params)
         return [OpenF1Location.model_validate(item) for item in payload]
+
+    async def get_location_batch(
+        self,
+        *,
+        session_key: int,
+        driver_numbers: Sequence[int],
+        limit: int | None = None,
+    ) -> dict[int, list[OpenF1Location]]:
+        unique_driver_numbers = sorted(set(driver_numbers))
+        if not unique_driver_numbers:
+            return {}
+
+        responses = await asyncio.gather(
+            *[
+                self.get_location(
+                    session_key=session_key,
+                    driver_number=driver_number,
+                    limit=limit,
+                )
+                for driver_number in unique_driver_numbers
+            ]
+        )
+        return {
+            driver_number: records
+            for driver_number, records in zip(unique_driver_numbers, responses, strict=True)
+        }
 
     async def discover_session(self, query: SessionDiscoveryQuery) -> OpenF1Session:
         payload = await self._get_sessions(query)
