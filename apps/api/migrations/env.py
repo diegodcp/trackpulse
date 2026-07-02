@@ -4,10 +4,9 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from trackpulse_api.db.base import Base
-from trackpulse_api.db import models  # noqa: F401
+from trackpulse_api.db.models import *  # noqa: F401, F403 — ensure all models are registered
 
 config = context.config
-
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
@@ -15,6 +14,7 @@ target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
+    """Run migrations in 'offline' mode — emit SQL to stdout."""
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
@@ -28,6 +28,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    """Run migrations in 'online' mode with sync engine."""
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
@@ -36,9 +37,10 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)
-
         with context.begin_transaction():
             context.run_migrations()
+
+    connectable.dispose()
 
 
 if context.is_offline_mode():
