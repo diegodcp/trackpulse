@@ -39,12 +39,23 @@ export function SessionStatusBar() {
         <p><span>Source</span>Fixture replay</p>
         <p><span>Connection</span>{connectionStatus}</p>
         <p><span>Replay</span>{replayStatus}</p>
-        {snapshotQuery.isPending && (
-          <p><span>Weather</span>Loading measured weather...</p>
+        {snapshotQuery.isLoading && (
+          <p className="session-status-badge session-status-badge-loading" role="status" aria-live="polite">
+            <span>Connection</span>
+            <span className="status-spinner" aria-hidden="true" />
+            Loading snapshot...
+          </p>
         )}
 
         {snapshotQuery.isError && (
-          <p role="alert" className="session-status-message session-status-message-error">
+          <p className="session-status-badge session-status-badge-error" role="alert">
+            <span>Connection</span>
+            Connection error
+          </p>
+        )}
+
+        {snapshotQuery.isError && (
+          <p className="session-status-message session-status-message-error">
             Track snapshot unavailable. Please try again shortly.
           </p>
         )}

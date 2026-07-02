@@ -6,10 +6,20 @@ export function InsightPanel({ query }) {
   return (
     <section className="insight-panel" aria-label="Insights">
       <h2>Live Insights</h2>
-      {query.isLoading ? <p className="insight-panel-state">Loading live insights...</p> : null}
-      {query.isError ? <p className="insight-panel-state">Live insights are temporarily unavailable.</p> : null}
+      {query.isLoading ? (
+        <p className="insight-panel-state insight-panel-state-loading" role="status" aria-live="polite">
+          Loading live insights...
+        </p>
+      ) : null}
+      {query.isError ? (
+        <p className="insight-panel-state insight-panel-state-error" role="alert">
+          Live insights are temporarily unavailable.
+        </p>
+      ) : null}
       {!query.isLoading && !query.isError && insights.length === 0 ? (
-        <p className="insight-panel-state">No active insights right now. Start replay to populate this panel.</p>
+        <p className="insight-panel-state insight-panel-state-empty">
+          No active insights right now. Start replay to populate this panel.
+        </p>
       ) : null}
       <div className="insight-grid">
         {insights.map((insight) => (

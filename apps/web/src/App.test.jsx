@@ -167,7 +167,7 @@ describe('TP-BH-0013 Track snapshot connection', () => {
 
     render(<App />);
 
-    expect(await screen.findByText('Loading measured weather...')).toBeInTheDocument();
+    expect(await screen.findByText('Loading snapshot...')).toBeInTheDocument();
   });
 
   it('shows safe error state when track snapshot request fails', async () => {
@@ -180,6 +180,7 @@ describe('TP-BH-0013 Track snapshot connection', () => {
     expect(
       await screen.findByText('Track snapshot unavailable. Please try again shortly.')
     ).toBeInTheDocument();
+    expect(screen.getByText('Connection error')).toBeInTheDocument();
   });
 
   it('shows empty state when track snapshot payload is missing snapshot', async () => {
@@ -212,5 +213,33 @@ describe('TP-BH-0013 Track snapshot connection', () => {
     expect(screen.getByTestId('replay-time')).toBeInTheDocument();
     expect(screen.getByText('Car markers use measured replay locations but are displayed as approximate positions.')).toBeInTheDocument();
     expect(await screen.findByTestId('replay-car-marker')).toBeInTheDocument();
+  });
+
+  it('shows TrackMapPanel loading overlay while snapshot request is in flight', async () => {
+    server.use(
+      http.get('/api/v1/track-state/latest', async () => {
+        await delay(220);
+        return HttpResponse.json(trackSnapshotFixture);
+      })
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText('Loading map snapshot...')).toBeInTheDocument();
+  });
+});
+
+describe('MVP-0206 InsightPanel loading state', () => {
+  it('shows loading text while live insights are in flight', async () => {
+    server.use(
+      http.get('/api/v1/insights/latest', async () => {
+        await delay(250);
+        return HttpResponse.json({ insights: [] });
+      })
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText('Loading live insights...')).toBeInTheDocument();
   });
 });

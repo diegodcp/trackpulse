@@ -95,7 +95,14 @@ export function TrackMapPanel({ activeLayer }) {
   const [fixtureDisplayName, setFixtureDisplayName] = useState('');
   const [scrubberCursor, setScrubberCursor] = useState(null);
   const [replayError, setReplayError] = useState('');
+  const [isSnapshotErrorVisible, setIsSnapshotErrorVisible] = useState(true);
   const snapshotQuery = useTrackSnapshot();
+
+  useEffect(() => {
+    if (snapshotQuery.isError) {
+      setIsSnapshotErrorVisible(true);
+    }
+  }, [snapshotQuery.isError]);
 
   useEffect(() => {
     setCircuit(bahrainCircuit);
@@ -229,6 +236,7 @@ export function TrackMapPanel({ activeLayer }) {
       <ReplayControls
         fixtureId={replayFixtureId}
         sessionName={fixtureDisplayName}
+        isSnapshotLoading={snapshotQuery.isLoading}
       />
       <div className="replay-controls">
         <label className="replay-scrubber-label" htmlFor="replay-scrubber">
@@ -246,14 +254,35 @@ export function TrackMapPanel({ activeLayer }) {
         />
         {replayError && <p className="session-status-message session-status-message-error">{replayError}</p>}
       </div>
-      <CircuitMap
-        circuit={circuit}
-        activeLayer={activeLayer}
-        windDirectionDeg={snapshotQuery.data?.weather?.wind_direction_deg ?? null}
-        windSpeedMs={snapshotQuery.data?.weather?.wind_speed_ms ?? null}
-        carMarkers={replayMarker}
-        segmentStates={snapshotQuery.data?.segment_states ?? []}
-      />
+      {snapshotQuery.isError && isSnapshotErrorVisible ? (
+        <div className="track-map-error-banner" role="alert">
+          <p>Connection error. Unable to load latest track snapshot.</p>
+          <button
+            type="button"
+            className="layer-button"
+            onClick={() => setIsSnapshotErrorVisible(false)}
+            aria-label="Dismiss track map error"
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
+      <div className="track-map-canvas">
+        <CircuitMap
+          circuit={circuit}
+          activeLayer={activeLayer}
+          windDirectionDeg={snapshotQuery.data?.weather?.wind_direction_deg ?? null}
+          windSpeedMs={snapshotQuery.data?.weather?.wind_speed_ms ?? null}
+          carMarkers={replayMarker}
+          segmentStates={snapshotQuery.data?.segment_states ?? []}
+        />
+        {snapshotQuery.isLoading ? (
+          <div className="track-map-overlay" role="status" aria-live="polite">
+            <span className="status-spinner" aria-hidden="true" />
+            Loading map snapshot...
+          </div>
+        ) : null}
+      </div>
     </section>
   );
 }

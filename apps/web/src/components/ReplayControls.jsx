@@ -19,7 +19,7 @@ function formatReplayTime(value) {
   return parsed.toISOString();
 }
 
-export function ReplayControls({ fixtureId, sessionName }) {
+export function ReplayControls({ fixtureId, sessionName, isSnapshotLoading = false }) {
   const [status, setStatus] = useState('idle');
   const [speedMultiplier, setSpeedMultiplier] = useState(1);
   const [replayTime, setReplayTime] = useState(null);
@@ -117,6 +117,7 @@ export function ReplayControls({ fixtureId, sessionName }) {
   const canStart = (isIdle || isPaused) && !isBusy;
   const canPause = isRunning && !isBusy;
   const canStop = (isRunning || isPaused) && !isBusy;
+  const disableAllButtons = isBusy || isSnapshotLoading;
 
   const statusClass =
     isRunning
@@ -142,8 +143,8 @@ export function ReplayControls({ fixtureId, sessionName }) {
           type="button"
           className="layer-button"
           onClick={handleStart}
-          disabled={!canStart}
-          aria-disabled={!canStart}
+          disabled={!canStart || disableAllButtons}
+          aria-disabled={!canStart || disableAllButtons}
           data-testid="replay-start-btn"
         >
           {isPaused ? 'Resume' : 'Start'}
@@ -152,8 +153,8 @@ export function ReplayControls({ fixtureId, sessionName }) {
           type="button"
           className="layer-button"
           onClick={handlePause}
-          disabled={!canPause}
-          aria-disabled={!canPause}
+          disabled={!canPause || disableAllButtons}
+          aria-disabled={!canPause || disableAllButtons}
           data-testid="replay-pause-btn"
         >
           Pause
@@ -162,8 +163,8 @@ export function ReplayControls({ fixtureId, sessionName }) {
           type="button"
           className="layer-button"
           onClick={handleStop}
-          disabled={!canStop}
-          aria-disabled={!canStop}
+          disabled={!canStop || disableAllButtons}
+          aria-disabled={!canStop || disableAllButtons}
           data-testid="replay-stop-btn"
         >
           Stop
@@ -175,6 +176,8 @@ export function ReplayControls({ fixtureId, sessionName }) {
               type="button"
               className={`layer-button${speedMultiplier === speed ? ' is-active' : ''}`}
               onClick={() => handleSpeedChange(speed)}
+              disabled={disableAllButtons}
+              aria-disabled={disableAllButtons}
               data-testid={`replay-speed-${speed}x`}
             >
               {speed}x

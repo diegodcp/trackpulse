@@ -1,6 +1,6 @@
 import { render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { delay, http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { ReplayControls } from './ReplayControls';
 import { server, replayStatusFixture } from '../test/server';
@@ -267,5 +267,47 @@ describe('TP-BH-0021 ReplayControls', () => {
 
     expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('Failed to stop replay');
+  });
+
+  it('disables all replay control buttons while a lifecycle request is pending', async () => {
+    const user = userEvent.setup();
+
+    server.use(
+      http.get('/api/v1/events/replay-status', () =>
+        HttpResponse.json({ ...replayStatusFixture, status: 'idle' })
+      ),
+      http.post('/api/v1/replay/:fixtureId/start', async ({ request }) => {
+        await delay(220);
+        const body = await request.json();
+        return HttpResponse.json({
+          ...replayStatusFixture,
+          status: 'running',
+          speed_multiplier: body.speed_multiplier ?? 1,
+          message: 'Replay started'
+        });
+      })
+    );
+
+    render(<ReplayControls fixtureId="bahrain-2023-race" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('replay-start-btn')).not.toBeDisabled();
+    });
+
+    await user.click(screen.getByTestId('replay-start-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('replay-start-btn')).toBeDisabled();
+      expect(screen.getByTestId('replay-pause-btn')).toBeDisabled();
+      expect(screen.getByTestId('replay-stop-btn')).toBeDisabled();
+      expect(screen.getByTestId('replay-speed-1x')).toBeDisabled();
+      expect(screen.getByTestId('replay-speed-5x')).toBeDisabled();
+      expect(screen.getByTestId('replay-speed-20x')).toBeDisabled();
+      expect(screen.getByTestId('replay-speed-100x')).toBeDisabled();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('replay-status')).toHaveTextContent('running');
+    });
   });
 });

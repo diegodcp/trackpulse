@@ -138,6 +138,25 @@ main {
   color: #ffb0b0 !important;
 }
 
+.session-status-badge-loading,
+.session-status-badge-error {
+  grid-template-columns: 72px auto 1fr !important;
+  align-items: center;
+}
+
+.session-status-badge-error {
+  color: #ffb0b0 !important;
+}
+
+.status-spinner {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--cyan);
+  animation: trackpulseSpinner 0.8s linear infinite;
+}
+
 .track-map-panel {
   grid-column: 1;
   grid-row: 1 / span 2;
@@ -173,6 +192,41 @@ main {
   margin: 0.45rem 0 0.65rem;
   color: var(--ink-soft);
   font-size: 0.78rem;
+}
+
+.track-map-error-banner {
+  margin-bottom: 0.7rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #8d4c4c;
+  background: rgba(101, 39, 39, 0.4);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.track-map-error-banner p {
+  margin: 0;
+  color: #ffcdcd;
+  font-size: 0.82rem;
+}
+
+.track-map-canvas {
+  position: relative;
+}
+
+.track-map-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 0.5rem;
+  justify-items: center;
+  background: rgba(15, 20, 27, 0.62);
+  border-radius: 8px;
+  font-size: 0.88rem;
+  color: var(--ink);
 }
 
 .replay-controls {
@@ -264,6 +318,13 @@ main {
   color: #091016;
 }
 
+.layer-button:disabled,
+.layer-button[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .track-map-placeholder {
   border: 2px dashed #3f4f64;
   border-radius: 12px;
@@ -301,6 +362,18 @@ main {
   margin: 0.4rem 0 0.8rem;
   color: var(--ink-soft);
   font-size: 0.92rem;
+}
+
+.insight-panel-state-loading {
+  color: #d9ebff;
+}
+
+.insight-panel-state-error {
+  color: #ffb0b0;
+}
+
+.insight-panel-state-empty {
+  color: var(--ink-soft);
 }
 
 .insight-card-header {
@@ -370,6 +443,15 @@ main {
 
 .truth-label-inferred {
   background: var(--inferred);
+}
+
+@keyframes trackpulseSpinner {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 640px) {
