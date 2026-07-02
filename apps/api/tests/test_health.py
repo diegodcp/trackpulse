@@ -8,7 +8,7 @@ from trackpulse_api.settings import AppSettings
 
 @pytest.mark.asyncio
 async def test_health_live_returns_200() -> None:
-    app = create_app(AppSettings())
+    app = create_app(AppSettings(openf1_mode="fixture"))
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/health/live")
@@ -47,7 +47,7 @@ async def test_health_ready_includes_db_dependency_when_enabled(tmp_path: Path) 
 
 @pytest.mark.asyncio
 async def test_version_includes_app_name() -> None:
-    app = create_app(AppSettings(app_name="TrackPulse API"))
+    app = create_app(AppSettings(app_name="TrackPulse API", openf1_mode="fixture"))
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/version")
@@ -56,3 +56,16 @@ async def test_version_includes_app_name() -> None:
     assert response.status_code == 200
     assert "TrackPulse" in payload["service"]
     assert payload["app_name"] == "TrackPulse API"
+
+
+@pytest.mark.asyncio
+async def test_health_ready_returns_200_in_historical_mode_without_db() -> None:
+    app = create_app(AppSettings(openf1_mode="historical", db_enabled=False))
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/health/ready")
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["ready"] is True
+    assert payload["dependencies"]["openf1"]["mode"] == "historical"

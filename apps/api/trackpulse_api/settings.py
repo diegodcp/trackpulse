@@ -21,7 +21,7 @@ class AppSettings(BaseSettings):
 
     app_name: str = "TrackPulse API"
     app_version: str = "0.1.0"
-    openf1_mode: Literal["fixture", "historical", "live"] = "fixture"
+    openf1_mode: Literal["fixture", "historical", "live"] = "historical"
     openf1_base_url: str = "https://api.openf1.org"
     openf1_bearer_token: str | None = None
     openf1_username: str | None = None
