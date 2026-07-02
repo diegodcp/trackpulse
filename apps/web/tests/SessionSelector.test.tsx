@@ -179,7 +179,7 @@ describe('SessionSelector', () => {
     expect(capturedSessionName).toBe('Bahrain Grand Prix — Race');
   });
 
-  it('filters meetings by country', async () => {
+  it('filters meetings by circuit dropdown', async () => {
     const user = userEvent.setup();
     mockApiFetch.mockResolvedValue(mockMeetings);
     render(
@@ -190,8 +190,8 @@ describe('SessionSelector', () => {
 
     await waitFor(() => screen.getByText('Bahrain Grand Prix'));
 
-    const filter = screen.getByPlaceholderText(/filter/i);
-    await user.type(filter, 'Belgium');
+    const circuitSelect = screen.getByDisplayValue('All Circuits');
+    await user.selectOptions(circuitSelect, 'spa');
 
     expect(screen.queryByText('Bahrain Grand Prix')).not.toBeInTheDocument();
     expect(screen.getByText('Belgian Grand Prix')).toBeInTheDocument();

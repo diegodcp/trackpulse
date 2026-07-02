@@ -1,0 +1,103 @@
+/* ===== Global App Styles — Dark Racing Theme ===== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg-primary: #0a0e14;
+  --bg-surface: #0d1117;
+  --bg-elevated: #161b22;
+  --border-default: #21262d;
+  --border-muted: #30363d;
+  --text-primary: #e6edf3;
+  --text-secondary: #8b949e;
+  --accent-orange: #f5a623;
+  --accent-green: #3fb950;
+  --accent-red: #f85149;
+  --accent-purple: #a371f7;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto,
+    sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  font-family: var(--font-sans);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* App Header */
+.app__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-default);
+  flex-shrink: 0;
+}
+
+.app__logo {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
+
+.app__logo-accent {
+  color: var(--accent-orange);
+}
+
+.app__selected-session {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--accent-orange);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.app__clear-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px;
+}
+
+.app__clear-btn:hover {
+  color: var(--accent-red);
+}
+
+/* Main Content */
+.app__main {
+  flex: 1;
+  padding: 20px 24px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.app__placeholder {
+  color: var(--text-secondary);
+  font-size: 14px;
+}

@@ -5,7 +5,8 @@ import { App } from '../src/App';
 describe('App', () => {
   it('renders without crashing', () => {
     render(<App />);
-    expect(screen.getByText('TrackPulse')).toBeInTheDocument();
+    expect(screen.getByText(/Track/)).toBeInTheDocument();
+    expect(screen.getByText(/Pulse/)).toBeInTheDocument();
   });
 
   it('shows session selector when no session is selected', () => {

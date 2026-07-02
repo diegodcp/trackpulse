@@ -1,0 +1,324 @@
+/* ===== Session Selector — Dark Racing Theme ===== */
+
+.session-selector {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #0d1117;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #1c2433;
+}
+
+/* Top Bar */
+.session-selector__topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: #161b22;
+  border-bottom: 1px solid #f5a623;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.session-selector__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.session-selector__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #f5a623;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.session-selector__controls {
+  display: flex;
+  gap: 10px;
+}
+
+.session-selector__select {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #e6edf3;
+  padding: 8px 32px 8px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23e6edf3'%3E%3Cpath d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  transition: border-color 0.2s;
+}
+
+.session-selector__select:hover {
+  border-color: #f5a623;
+}
+
+.session-selector__select:focus {
+  outline: none;
+  border-color: #f5a623;
+  box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.15);
+}
+
+.session-selector__select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Content Area */
+.session-selector__content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.session-selector__content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.session-selector__content::-webkit-scrollbar-track {
+  background: #0d1117;
+}
+
+.session-selector__content::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border-radius: 3px;
+}
+
+/* Loading State */
+.session-selector__loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 0;
+  gap: 12px;
+  color: #8b949e;
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #30363d;
+  border-top-color: #f5a623;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Error State */
+.session-selector__error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 0;
+  gap: 12px;
+  color: #f85149;
+}
+
+.btn-retry {
+  background: transparent;
+  border: 1px solid #f5a623;
+  color: #f5a623;
+  padding: 8px 20px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-retry:hover {
+  background: rgba(245, 166, 35, 0.1);
+}
+
+/* Empty State */
+.session-selector__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 0;
+  color: #8b949e;
+}
+
+/* Meeting List */
+.session-selector__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Meeting Row */
+.meeting-row {
+  border-radius: 6px;
+  overflow: hidden;
+  background: #161b22;
+  border: 1px solid #21262d;
+  transition: border-color 0.2s;
+}
+
+.meeting-row:hover {
+  border-color: #30363d;
+}
+
+.meeting-row--expanded {
+  border-color: #f5a623;
+}
+
+.meeting-row__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 14px 16px;
+  background: transparent;
+  border: none;
+  color: #e6edf3;
+  cursor: pointer;
+  text-align: left;
+  gap: 12px;
+  transition: background 0.15s;
+}
+
+.meeting-row__header:hover {
+  background: #1c2433;
+}
+
+.meeting-row__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.meeting-row__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e6edf3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.meeting-row__location {
+  font-size: 12px;
+  color: #8b949e;
+}
+
+.meeting-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.meeting-row__date {
+  font-size: 12px;
+  color: #8b949e;
+  background: #0d1117;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.meeting-row__chevron {
+  font-size: 14px;
+  color: #8b949e;
+  transition: transform 0.2s;
+}
+
+.meeting-row__chevron--open {
+  transform: rotate(180deg);
+  color: #f5a623;
+}
+
+/* Session Cards */
+.meeting-row__sessions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 16px 14px;
+  border-top: 1px solid #21262d;
+}
+
+.session-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 16px;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #e6edf3;
+  cursor: pointer;
+  transition: all 0.15s;
+  min-width: 100px;
+}
+
+.session-card:hover {
+  border-color: #f5a623;
+  background: #1c2433;
+  transform: translateY(-1px);
+}
+
+.session-card__name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.session-card__date {
+  font-size: 11px;
+  color: #8b949e;
+}
+
+/* Session type accent colors */
+.session-card--race {
+  border-left: 3px solid #f5a623;
+}
+
+.session-card--race:hover {
+  border-color: #f5a623;
+  box-shadow: 0 0 8px rgba(245, 166, 35, 0.15);
+}
+
+.session-card--qualifying {
+  border-left: 3px solid #a371f7;
+}
+
+.session-card--qualifying:hover {
+  border-color: #a371f7;
+  box-shadow: 0 0 8px rgba(163, 113, 247, 0.15);
+}
+
+.session-card--practice {
+  border-left: 3px solid #3fb950;
+}
+
+.session-card--practice:hover {
+  border-color: #3fb950;
+  box-shadow: 0 0 8px rgba(63, 185, 80, 0.15);
+}
+
+.session-card--sprint {
+  border-left: 3px solid #39d2f5;
+}
+
+.session-card--sprint:hover {
+  border-color: #39d2f5;
+  box-shadow: 0 0 8px rgba(57, 210, 245, 0.15);
+}

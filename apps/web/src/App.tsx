@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppProvider, useAppContext } from './context/AppContext';
 import { SessionSelector } from './components/SessionSelector';
+import './App.css';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -13,20 +14,22 @@ function AppContent() {
 
   return (
     <div className="app">
-      <header>
-        <h1>TrackPulse</h1>
+      <header className="app__header">
+        <h1 className="app__logo">
+          <span className="app__logo-accent">Track</span>Pulse
+        </h1>
         {selectedSessionName && (
-          <div className="selected-session">
+          <div className="app__selected-session">
             <span>{selectedSessionName}</span>
-            <button onClick={clearSession}>✕</button>
+            <button className="app__clear-btn" onClick={clearSession}>✕</button>
           </div>
         )}
       </header>
-      <main>
+      <main className="app__main">
         {!selectedSessionName ? (
           <SessionSelector />
         ) : (
-          <p>Session loaded: {selectedSessionName}</p>
+          <p className="app__placeholder">Session loaded: {selectedSessionName}</p>
         )}
       </main>
     </div>
