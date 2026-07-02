@@ -46,3 +46,4 @@ prompts/
 adr/
 docs/
 tasks/
+.playwright-mcp/
