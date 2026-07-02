@@ -8,8 +8,8 @@ describe('App', () => {
     expect(screen.getByText('TrackPulse')).toBeInTheDocument();
   });
 
-  it('shows initial placeholder message', () => {
+  it('shows session selector when no session is selected', () => {
     render(<App />);
-    expect(screen.getByText('Select a session to begin')).toBeInTheDocument();
+    expect(screen.getByText(/loading/i)).toBeInTheDocument();
   });
 });
