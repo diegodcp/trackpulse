@@ -9,6 +9,7 @@ from trackpulse_api.config import Settings
 from trackpulse_api.services.circuit_service import CircuitService
 from trackpulse_api.services.ingest_service import IngestService
 from trackpulse_api.services.session_discovery import SessionDiscoveryService
+from trackpulse_api.services.timeline_service import TimelineService
 
 
 @lru_cache
@@ -50,3 +51,9 @@ async def get_ingest_service(
 ) -> IngestService:
     client = get_openf1_client(request)
     return IngestService(openf1_client=client, db_session=db_session)
+
+
+async def get_timeline_service(
+    db_session: AsyncSession = Depends(get_db_session),
+) -> TimelineService:
+    return TimelineService(db_session=db_session)
