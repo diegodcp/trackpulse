@@ -14,6 +14,7 @@ from trackpulse_api.processing.circuit_builder import (
     CircuitSegment,
     extract_circuit_centerline,
 )
+from trackpulse_api.services.exceptions import InsufficientDataError, SessionNotFoundError
 
 
 class CircuitService:
@@ -31,7 +32,7 @@ class CircuitService:
         )
         session = result.scalar_one_or_none()
         if not session:
-            raise ValueError(f"Session with key {session_key} not found in database")
+            raise SessionNotFoundError(f"Session with key {session_key} not found")
 
         # 2. Check DB cache
         existing = await self._get_from_db(session.id)
@@ -105,7 +106,7 @@ class CircuitService:
         ]
 
         if not valid_laps:
-            raise ValueError(f"No valid laps found for session {session_key}")
+            raise InsufficientDataError(f"No valid laps found for session {session_key}")
 
         # Find fastest lap
         fastest = min(valid_laps, key=lambda l: l["lap_duration"])
@@ -125,7 +126,7 @@ class CircuitService:
         )
 
         if len(raw_positions) < 50:
-            raise ValueError(
+            raise InsufficientDataError(
                 f"Insufficient location data for driver {driver_number} "
                 f"lap {lap_number}: got {len(raw_positions)} points"
             )
