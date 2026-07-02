@@ -1,27 +1,47 @@
 import { Application } from 'pixi.js';
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { useCircuitGeometry } from '../hooks/useCircuitGeometry';
+import { useCarTimeline } from '../hooks/useCarTimeline';
 import { useAppContext } from '../context/AppContext';
-import { computeTransform } from '../utils/coordinates';
+import { computeTransform, type Transform } from '../utils/coordinates';
 import { drawTrack } from './TrackLayer';
 import { drawStartFinish } from './StartFinishMarker';
+import { useCarLayer } from './CarLayer';
+import { interpolateFrames, findFrameAtTime, type InterpolatedCar } from '../utils/interpolation';
 import type { CircuitGeometry } from '../types/circuit';
 
 export function CircuitCanvas() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<Application | null>(null);
   const geometryRef = useRef<CircuitGeometry | undefined>(undefined);
+  const transformRef = useRef<Transform | null>(null);
+  const currentTimeRef = useRef(0);
   const { selectedSessionKey } = useAppContext();
   const { data: geometry, isLoading, error } = useCircuitGeometry(selectedSessionKey);
+  const timeline = useCarTimeline(selectedSessionKey);
+
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [interpolatedCars, setInterpolatedCars] = useState<InterpolatedCar[]>([]);
+  const [currentTransform, setCurrentTransform] = useState<Transform | null>(null);
 
   // Keep geometry ref in sync
   geometryRef.current = geometry;
+
+  // Car layer management
+  useCarLayer({
+    app: appRef.current,
+    cars: interpolatedCars,
+    transform: currentTransform,
+  });
 
   function redraw() {
     const app = appRef.current;
     const geo = geometryRef.current;
     if (!app || !geo) return;
-    renderCircuit(app, geo);
+    const transform = renderCircuit(app, geo);
+    transformRef.current = transform;
+    setCurrentTransform(transform);
   }
 
   useEffect(() => {
@@ -100,6 +120,48 @@ export function CircuitCanvas() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Animation ticker for car interpolation (chunked)
+  useEffect(() => {
+    const app = appRef.current;
+    if (!app || !timeline.isReady) return;
+
+    const tickerCallback = (deltaTime: { deltaMS: number }) => {
+      if (isPlaying) {
+        const deltaSec = (deltaTime.deltaMS / 1000) * playbackSpeed;
+        currentTimeRef.current += deltaSec;
+
+        // Loop back to start if past end
+        if (currentTimeRef.current > timeline.durationSeconds) {
+          currentTimeRef.current = 0;
+        }
+      }
+
+      const result = timeline.getFramesForTime(currentTimeRef.current);
+      if (!result || result.frames.length === 0) return;
+
+      const { frames } = result;
+      const { frameIndex, t } = findFrameAtTime(frames, currentTimeRef.current);
+      const nextIndex = Math.min(frameIndex + 1, frames.length - 1);
+      const interpolated = interpolateFrames(
+        frames[frameIndex],
+        frames[nextIndex],
+        t,
+      );
+      setInterpolatedCars(interpolated);
+    };
+
+    app.ticker.add(tickerCallback);
+    return () => {
+      app.ticker.remove(tickerCallback);
+    };
+  }, [timeline.isReady, timeline.durationSeconds, isPlaying, playbackSpeed]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reset time when session changes
+  useEffect(() => {
+    currentTimeRef.current = 0;
+    setInterpolatedCars([]);
+  }, [selectedSessionKey]);
+
   return (
     <div ref={canvasRef} className="circuit-canvas">
       {isLoading && <div className="circuit-loading">Loading circuit...</div>}
@@ -108,7 +170,7 @@ export function CircuitCanvas() {
   );
 }
 
-function renderCircuit(app: Application, geometry: CircuitGeometry) {
+function renderCircuit(app: Application, geometry: CircuitGeometry): Transform {
   app.stage.removeChildren();
 
   const viewport = { width: app.screen.width, height: app.screen.height };
@@ -125,4 +187,6 @@ function renderCircuit(app: Application, geometry: CircuitGeometry) {
     const marker = drawStartFinish(geometry.points[0], transform);
     app.stage.addChild(marker);
   }
+
+  return transform;
 }
