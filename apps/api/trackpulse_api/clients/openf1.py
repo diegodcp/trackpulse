@@ -16,6 +16,18 @@ class OpenF1ClientProtocol(Protocol):
 
     async def get_meetings(self, year: int, country: str | None = None) -> list[dict]: ...
     async def get_sessions(self, meeting_key: int) -> list[dict]: ...
+    async def get_location(
+        self,
+        session_key: int,
+        driver_number: int,
+        date_start: str | None = None,
+        date_end: str | None = None,
+    ) -> list[dict]: ...
+    async def get_laps(
+        self,
+        session_key: int,
+        driver_number: int | None = None,
+    ) -> list[dict]: ...
 
 
 class OpenF1Client:
@@ -35,6 +47,35 @@ class OpenF1Client:
     async def get_sessions(self, meeting_key: int) -> list[dict]:
         """GET /sessions?meeting_key={meeting_key}"""
         return await self._get("/sessions", {"meeting_key": meeting_key})
+
+    async def get_location(
+        self,
+        session_key: int,
+        driver_number: int,
+        date_start: str | None = None,
+        date_end: str | None = None,
+    ) -> list[dict]:
+        """GET /location?session_key={key}&driver_number={driver}"""
+        params: dict[str, int | str] = {
+            "session_key": session_key,
+            "driver_number": driver_number,
+        }
+        if date_start:
+            params["date>"] = date_start
+        if date_end:
+            params["date<"] = date_end
+        return await self._get("/location", params)
+
+    async def get_laps(
+        self,
+        session_key: int,
+        driver_number: int | None = None,
+    ) -> list[dict]:
+        """GET /laps?session_key={key}&driver_number={driver}"""
+        params: dict[str, int | str] = {"session_key": session_key}
+        if driver_number is not None:
+            params["driver_number"] = driver_number
+        return await self._get("/laps", params)
 
     async def _get(self, path: str, params: dict) -> list[dict]:
         try:
