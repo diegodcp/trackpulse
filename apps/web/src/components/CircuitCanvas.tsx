@@ -1,15 +1,15 @@
 import { Application } from 'pixi.js';
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect } from 'react';
 import { useCircuitGeometry } from '../hooks/useCircuitGeometry';
 import { useCarTimeline } from '../hooks/useCarTimeline';
 import { usePlayback } from '../hooks/usePlayback';
 import { useAppContext } from '../context/AppContext';
-import { computeTransform, type Transform } from '../utils/coordinates';
+import { computeTransform, worldToScreen, type Transform } from '../utils/coordinates';
 import { drawTrack } from './TrackLayer';
 import { drawStartFinish } from './StartFinishMarker';
 import { PlaybackControlsBar } from './PlaybackControls';
-import { useCarLayer } from './CarLayer';
-import { interpolateFrames, findFrameAtTime, type InterpolatedCar } from '../utils/interpolation';
+import { CarMarkerSprite } from './CarMarker';
+import { interpolateFrames, findFrameAtTime } from '../utils/interpolation';
 import type { CircuitGeometry } from '../types/circuit';
 
 export function CircuitCanvas() {
@@ -17,40 +17,16 @@ export function CircuitCanvas() {
   const appRef = useRef<Application | null>(null);
   const geometryRef = useRef<CircuitGeometry | undefined>(undefined);
   const transformRef = useRef<Transform | null>(null);
+  const markersRef = useRef<Map<number, CarMarkerSprite>>(new Map());
   const { selectedSessionKey } = useAppContext();
   const { data: geometry, isLoading, error } = useCircuitGeometry(selectedSessionKey);
   const timeline = useCarTimeline(selectedSessionKey);
 
-  const [interpolatedCars, setInterpolatedCars] = useState<InterpolatedCar[]>([]);
-  const [currentTransform, setCurrentTransform] = useState<Transform | null>(null);
-
-  // Playback controls
-  const handleTimeUpdate = useCallback(
-    (elapsedSeconds: number) => {
-      if (!timeline.isReady) return;
-      const result = timeline.getFramesForTime(elapsedSeconds);
-      if (!result || result.frames.length === 0) return;
-
-      const { frames } = result;
-      const { frameIndex, t } = findFrameAtTime(frames, elapsedSeconds);
-      const nextIndex = Math.min(frameIndex + 1, frames.length - 1);
-      const interpolated = interpolateFrames(frames[frameIndex], frames[nextIndex], t);
-      setInterpolatedCars(interpolated);
-    },
-    [timeline.isReady, timeline.getFramesForTime],
-  );
-
-  const playback = usePlayback(timeline, handleTimeUpdate);
+  // Playback controls — ticker-driven, no per-frame React state
+  const playback = usePlayback(timeline);
 
   // Keep geometry ref in sync
   geometryRef.current = geometry;
-
-  // Car layer management
-  useCarLayer({
-    app: appRef.current,
-    cars: interpolatedCars,
-    transform: currentTransform,
-  });
 
   function redraw() {
     const app = appRef.current;
@@ -58,7 +34,6 @@ export function CircuitCanvas() {
     if (!app || !geo) return;
     const transform = renderCircuit(app, geo);
     transformRef.current = transform;
-    setCurrentTransform(transform);
   }
 
   useEffect(() => {
@@ -137,25 +112,81 @@ export function CircuitCanvas() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Animation ticker for car interpolation (chunked)
+  // Pixi ticker drives animation — updates sprites directly via refs (no React re-renders)
   useEffect(() => {
     const app = appRef.current;
     if (!app || !timeline.isReady) return;
 
-    const tickerCallback = () => {
-      // Interpolation is driven by usePlayback's onTimeUpdate callback;
-      // this ticker just ensures Pixi re-renders when cars update.
+    const tickerCallback = (ticker: { deltaMS: number }) => {
+      const state = playback.stateRef.current;
+      const speed = playback.speedRef.current;
+      const transform = transformRef.current;
+
+      if (state === 'playing') {
+        const deltaSec = (ticker.deltaMS / 1000) * speed;
+        playback.advanceTime(deltaSec);
+      }
+
+      if (!transform) return;
+
+      const elapsedSeconds = playback.currentTimeRef.current;
+      const result = timeline.getFramesForTime(elapsedSeconds);
+      if (!result || result.frames.length === 0) return;
+
+      const { frames } = result;
+      const { frameIndex, t } = findFrameAtTime(frames, elapsedSeconds);
+      const nextIndex = Math.min(frameIndex + 1, frames.length - 1);
+      const interpolated = interpolateFrames(frames[frameIndex], frames[nextIndex], t);
+
+      // Update sprites directly — no React state
+      const currentDrivers = new Set<number>();
+      for (const car of interpolated) {
+        currentDrivers.add(car.driver_number);
+        let marker = markersRef.current.get(car.driver_number);
+
+        if (!marker) {
+          marker = new CarMarkerSprite(car.team_colour, car.name_acronym);
+          app.stage.addChild(marker.container);
+          markersRef.current.set(car.driver_number, marker);
+        }
+
+        const { screenX, screenY } = worldToScreen(car.x, car.y, transform);
+        marker.updatePosition(screenX, screenY);
+
+        if (car.inPit) {
+          marker.setInPit(true);
+        } else {
+          marker.setActive(car.isActive);
+        }
+      }
+
+      // Remove stale markers
+      for (const [driverNum, marker] of markersRef.current) {
+        if (!currentDrivers.has(driverNum)) {
+          marker.destroy();
+          markersRef.current.delete(driverNum);
+        }
+      }
+
+      // Update current lap from first active car
+      const firstCar = interpolated.find((c) => c.isActive && c.lap_number !== null);
+      if (firstCar) {
+        playback.setCurrentLap(firstCar.lap_number);
+      }
     };
 
     app.ticker.add(tickerCallback);
     return () => {
       app.ticker.remove(tickerCallback);
     };
-  }, [timeline.isReady]);
+  }, [timeline.isReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Reset cars when session changes
+  // Cleanup markers and reset when session changes
   useEffect(() => {
-    setInterpolatedCars([]);
+    for (const marker of markersRef.current.values()) {
+      marker.destroy();
+    }
+    markersRef.current.clear();
   }, [selectedSessionKey]);
 
   return (

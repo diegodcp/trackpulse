@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PlaybackControlsBar } from '../src/components/PlaybackControls';
 import type { PlaybackControls } from '../src/hooks/usePlayback';
+import React from 'react';
 
 function makeMockPlayback(overrides: Partial<PlaybackControls> = {}): PlaybackControls {
   return {
@@ -16,6 +17,11 @@ function makeMockPlayback(overrides: Partial<PlaybackControls> = {}): PlaybackCo
     setSpeed: vi.fn(),
     seekTo: vi.fn(),
     seekRelative: vi.fn(),
+    currentTimeRef: { current: 0 } as React.RefObject<number>,
+    speedRef: { current: 1 } as React.RefObject<number>,
+    stateRef: { current: 'paused' } as React.RefObject<'idle' | 'loading' | 'playing' | 'paused'>,
+    advanceTime: vi.fn(),
+    setCurrentLap: vi.fn(),
     ...overrides,
   };
 }

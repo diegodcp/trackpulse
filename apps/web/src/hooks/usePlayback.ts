@@ -14,6 +14,17 @@ export interface PlaybackControls {
   setSpeed: (speed: number) => void;
   seekTo: (seconds: number) => void;
   seekRelative: (deltaSec: number) => void;
+
+  /** Ref for high-frequency reads (Pixi ticker). Avoid React re-renders. */
+  currentTimeRef: React.RefObject<number>;
+  /** Ref for speed (Pixi ticker reads). */
+  speedRef: React.RefObject<number>;
+  /** Ref for state (Pixi ticker reads). */
+  stateRef: React.RefObject<PlaybackState>;
+  /** Write current time from ticker (throttled UI update). */
+  advanceTime: (deltaSec: number) => void;
+  /** Set current lap from external source. */
+  setCurrentLap: (lap: number | null) => void;
 }
 
 export const VALID_SPEEDS = [1, 2, 5, 10, 20, 50];
@@ -24,19 +35,35 @@ interface TimelineInfo {
   durationSeconds: number;
 }
 
+const UI_UPDATE_INTERVAL = 100; // ms between React state updates for time display
+
 export function usePlayback(
   timeline: TimelineInfo | null,
-  onTimeUpdate: (elapsedSeconds: number) => void,
+  onTimeUpdate?: (elapsedSeconds: number) => void,
 ): PlaybackControls {
   const [state, setState] = useState<PlaybackState>('idle');
   const [speed, setSpeedState] = useState(1);
   const [currentTime, setCurrentTime] = useState(0);
-  const [currentLap, setCurrentLap] = useState<number | null>(null);
+  const [currentLap, setCurrentLapState] = useState<number | null>(null);
+
   const currentTimeRef = useRef(0);
+  const speedRef = useRef(1);
+  const stateRef = useRef<PlaybackState>('idle');
+  const lastUiUpdateRef = useRef(0);
   const onTimeUpdateRef = useRef(onTimeUpdate);
   onTimeUpdateRef.current = onTimeUpdate;
 
   const duration = timeline?.durationSeconds ?? 0;
+  const durationRef = useRef(duration);
+  durationRef.current = duration;
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+  useEffect(() => {
+    speedRef.current = speed;
+  }, [speed]);
 
   // Transition states based on timeline availability
   useEffect(() => {
@@ -44,8 +71,8 @@ export function usePlayback(
       setState('idle');
     } else if (timeline.isLoading && !timeline.isReady) {
       setState('loading');
-    } else if (timeline.isReady && (state === 'idle' || state === 'loading')) {
-      setState('paused');
+    } else if (timeline.isReady && (stateRef.current === 'idle' || stateRef.current === 'loading')) {
+      setState('playing'); // Auto-play when timeline is ready
     }
   }, [timeline?.isReady, timeline?.isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -59,12 +86,12 @@ export function usePlayback(
 
   const seekTo = useCallback(
     (seconds: number) => {
-      const clamped = Math.max(0, Math.min(seconds, duration));
+      const clamped = Math.max(0, Math.min(seconds, durationRef.current));
       currentTimeRef.current = clamped;
       setCurrentTime(clamped);
-      onTimeUpdateRef.current(clamped);
+      onTimeUpdateRef.current?.(clamped);
     },
-    [duration],
+    [],
   );
 
   const seekRelative = useCallback(
@@ -80,42 +107,29 @@ export function usePlayback(
     }
   }, []);
 
-  // Animation loop
-  useEffect(() => {
-    if (state !== 'playing') return;
+  // Called by Pixi ticker every frame — advances time without causing React re-renders
+  const advanceTime = useCallback((deltaSec: number) => {
+    const dur = durationRef.current;
+    let newTime = currentTimeRef.current + deltaSec;
 
-    let rafId: number;
-    let lastTimestamp: number | null = null;
-
-    function tick(timestamp: number) {
-      if (lastTimestamp !== null) {
-        const deltaSec = ((timestamp - lastTimestamp) / 1000) * speed;
-        const newTime = currentTimeRef.current + deltaSec;
-
-        if (newTime >= duration) {
-          // Reached end — pause at end
-          currentTimeRef.current = duration;
-          setCurrentTime(duration);
-          onTimeUpdateRef.current(duration);
-          setState('paused');
-          return;
-        }
-
-        currentTimeRef.current = newTime;
-        setCurrentTime(newTime);
-        onTimeUpdateRef.current(newTime);
-      }
-      lastTimestamp = timestamp;
-      rafId = requestAnimationFrame(tick);
+    if (newTime >= dur) {
+      newTime = dur;
+      currentTimeRef.current = newTime;
+      setState('paused');
+    } else {
+      currentTimeRef.current = newTime;
     }
 
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, [state, speed, duration]);
+    // Throttle React state updates for the time display
+    const now = performance.now();
+    if (now - lastUiUpdateRef.current >= UI_UPDATE_INTERVAL) {
+      lastUiUpdateRef.current = now;
+      setCurrentTime(currentTimeRef.current);
+    }
+  }, []);
 
-  // Update current lap from external source
-  const updateLap = useCallback((lap: number | null) => {
-    setCurrentLap(lap);
+  const setCurrentLap = useCallback((lap: number | null) => {
+    setCurrentLapState(lap);
   }, []);
 
   // Keyboard shortcuts
@@ -182,5 +196,10 @@ export function usePlayback(
     setSpeed,
     seekTo,
     seekRelative,
+    currentTimeRef,
+    speedRef,
+    stateRef,
+    advanceTime,
+    setCurrentLap,
   };
 }
