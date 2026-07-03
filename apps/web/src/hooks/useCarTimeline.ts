@@ -19,6 +19,8 @@ interface ChunkedTimeline {
   targetHz: number;
   totalChunks: number;
   drivers: DriverMeta[];
+  /** Elapsed seconds from timeline start to lights out (race start). Null for non-race sessions. */
+  raceStartElapsedSeconds: number | null;
   getFramesForTime: (elapsedSeconds: number) => {
     frames: TimelineFrame[];
     chunkStart: number;
@@ -87,6 +89,7 @@ export function useCarTimeline(
     durationSeconds: number;
     totalChunks: number;
     drivers: DriverMeta[];
+    raceStartElapsedSeconds: number | null;
   } | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const pendingConversions = useRef<Map<number, (frames: TimelineFrame[]) => void>>(new Map());
@@ -153,6 +156,7 @@ export function useCarTimeline(
       durationSeconds: firstChunk.total_duration_seconds,
       totalChunks: firstChunk.total_chunks,
       drivers: firstChunk.drivers,
+      raceStartElapsedSeconds: firstChunk.race_start_elapsed_seconds ?? null,
     };
     convertChunk(firstChunk).then((frames) => {
       chunksRef.current.set(0, frames);
@@ -227,6 +231,7 @@ export function useCarTimeline(
     targetHz: hz,
     totalChunks: metaRef.current?.totalChunks ?? 0,
     drivers: metaRef.current?.drivers ?? [],
+    raceStartElapsedSeconds: metaRef.current?.raceStartElapsedSeconds ?? null,
     getFramesForTime,
     isReady,
     isLoading,

@@ -286,6 +286,7 @@ export function CircuitCanvas() {
       <PlaybackControlsBar
         playback={playback}
         disabled={!timeline.isReady}
+        raceStartElapsedSeconds={timeline.raceStartElapsedSeconds}
       />
     </div>
   );

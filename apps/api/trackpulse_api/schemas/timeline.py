@@ -55,6 +55,7 @@ class CompactChunkResponse(BaseModel):
     drivers: list[DriverMetaSchema]
     elapsed: list[float]
     positions: dict[str, DriverPositionsSchema]
+    race_start_elapsed_seconds: float | None = None
 
 
 class TimelineMetaResponse(BaseModel):
@@ -66,4 +67,5 @@ class TimelineMetaResponse(BaseModel):
     total_chunks: int
     chunk_seconds: float
     drivers: list[DriverMetaSchema]
+    race_start_elapsed_seconds: float | None = None
 

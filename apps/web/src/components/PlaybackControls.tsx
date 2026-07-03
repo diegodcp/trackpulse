@@ -4,11 +4,14 @@ import { formatTime } from '../utils/formatTime';
 interface PlaybackControlsProps {
   playback: PlaybackControls;
   disabled: boolean;
+  raceStartElapsedSeconds?: number | null;
 }
 
-export function PlaybackControlsBar({ playback, disabled }: PlaybackControlsProps) {
+export function PlaybackControlsBar({ playback, disabled, raceStartElapsedSeconds }: PlaybackControlsProps) {
   const { state, currentTime, duration, speed, play, pause, setSpeed, seekTo } =
     playback;
+
+  const isFormationLap = raceStartElapsedSeconds != null && currentTime < raceStartElapsedSeconds;
 
   return (
     <div className="playback-controls" role="toolbar" aria-label="Playback controls">
@@ -51,7 +54,11 @@ export function PlaybackControlsBar({ playback, disabled }: PlaybackControlsProp
         {formatTime(currentTime)} / {formatTime(duration)}
       </span>
 
-      {playback.currentLap !== null && (
+      {isFormationLap && (
+        <span className="playback-controls__lap playback-controls__lap--formation">Formation Lap</span>
+      )}
+
+      {!isFormationLap && playback.currentLap !== null && (
         <span className="playback-controls__lap">Lap {playback.currentLap}</span>
       )}
     </div>

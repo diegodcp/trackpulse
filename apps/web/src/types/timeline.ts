@@ -57,6 +57,7 @@ export const compactChunkSchema = z.object({
   drivers: z.array(driverMetaSchema),
   elapsed: z.array(z.number()),
   positions: z.record(z.string(), driverPositionsSchema),
+  race_start_elapsed_seconds: z.number().nullable().optional(),
 });
 
 export type DriverMeta = z.infer<typeof driverMetaSchema>;

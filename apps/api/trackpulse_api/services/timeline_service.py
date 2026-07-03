@@ -12,6 +12,7 @@ from trackpulse_api.db.models.car_timeline import CarTimeline
 from trackpulse_api.db.models.driver import Driver
 from trackpulse_api.db.models.lap import Lap
 from trackpulse_api.db.models.position import Position
+from trackpulse_api.db.models.race_control_event import RaceControlEvent
 from trackpulse_api.db.models.session import Session
 from trackpulse_api.processing.car_timeline_builder import (
     CarFrame,
@@ -22,12 +23,51 @@ from trackpulse_api.services.exceptions import InsufficientDataError, SessionNot
 
 logger = logging.getLogger(__name__)
 
+# Formation lap typically takes 3-4 minutes; we use a conservative buffer
+# so the timeline starts a bit before cars leave the grid.
+_FORMATION_LAP_OFFSET_SECONDS = 240
+
 
 class TimelineService:
     """Orchestrates car timeline generation: fetch data → build → store/retrieve."""
 
     def __init__(self, db_session: AsyncSession):
         self._db = db_session
+
+    async def _get_race_start_timestamp(self, session_id: int) -> datetime | None:
+        """Find the 'SESSION STARTED' timestamp from race_control_events.
+
+        Returns None if no such event exists (e.g. practice/qualifying sessions).
+        """
+        result = await self._db.execute(
+            select(RaceControlEvent.timestamp)
+            .where(
+                RaceControlEvent.session_id == session_id,
+                RaceControlEvent.category == "SessionStatus",
+                RaceControlEvent.message.ilike("%STARTED%"),
+            )
+            .order_by(RaceControlEvent.timestamp)
+            .limit(1)
+        )
+        row = result.scalar_one_or_none()
+        return row
+
+    async def _get_effective_start(self, session: Session) -> datetime | None:
+        """Determine the effective timeline start for race sessions.
+
+        For Race/Sprint sessions, returns formation lap start time
+        (SESSION STARTED minus offset). For other session types returns None
+        (use all data from first position).
+        """
+        if session.session_type not in ("Race", "Sprint"):
+            return None
+
+        race_start_ts = await self._get_race_start_timestamp(session.id)
+        if race_start_ts is None:
+            return None
+
+        formation_start = race_start_ts - timedelta(seconds=_FORMATION_LAP_OFFSET_SECONDS)
+        return formation_start
 
     async def get_timeline_meta(
         self, session_key: int, target_hz: float = 2.0, chunk_seconds: float = 120.0
@@ -74,6 +114,14 @@ class TimelineService:
             1 if total_duration % chunk_seconds > 0 else 0
         ))
 
+        # Compute race start offset relative to the (trimmed) timeline start
+        race_start_elapsed: float | None = None
+        race_start_ts = await self._get_race_start_timestamp(session.id)
+        if race_start_ts is not None and row.first_ts is not None:
+            offset = (race_start_ts - row.first_ts).total_seconds()
+            if 0 <= offset <= total_duration:
+                race_start_elapsed = round(offset, 3)
+
         return {
             "session_key": session_key,
             "total_duration_seconds": round(total_duration, 3),
@@ -81,6 +129,7 @@ class TimelineService:
             "total_chunks": total_chunks,
             "chunk_seconds": chunk_seconds,
             "drivers": drivers,
+            "race_start_elapsed_seconds": race_start_elapsed,
         }
 
     async def get_driver_speed_series(
@@ -147,8 +196,8 @@ class TimelineService:
         if cached:
             return cached
 
-        # 3. Build from raw data
-        timeline = await self._build_timeline(session.id, target_hz)
+        # 3. Build from raw data (with race-phase filtering for Race/Sprint)
+        timeline = await self._build_timeline(session.id, target_hz, session=session)
 
         # 4. Store in DB
         await self._store_timeline(session.id, timeline)
@@ -195,6 +244,14 @@ class TimelineService:
 
         if chunk_index >= total_chunks:
             return None  # Chunk out of range
+
+        # Compute race start offset (only needed for chunk 0 but cheap to compute)
+        race_start_elapsed: float | None = None
+        race_start_ts = await self._get_race_start_timestamp(session.id)
+        if race_start_ts is not None:
+            offset = (race_start_ts - first_ts).total_seconds()
+            if 0 <= offset <= total_duration:
+                race_start_elapsed = round(offset, 3)
 
         # 3. Compute chunk time window
         chunk_start_sec = chunk_index * chunk_seconds
@@ -319,6 +376,7 @@ class TimelineService:
             "drivers": drivers,
             "elapsed": elapsed_list,
             "positions": positions,
+            "race_start_elapsed_seconds": race_start_elapsed,
         }
 
     async def _get_drivers(self, session_id: int) -> list[dict]:
@@ -413,15 +471,29 @@ class TimelineService:
         return frames
 
     async def _build_timeline(
-        self, session_id: int, target_hz: float
+        self, session_id: int, target_hz: float, session: Session | None = None
     ) -> list[TimelineFrame]:
-        """Build timeline from raw ingested data."""
-        # Fetch raw positions
-        pos_result = await self._db.execute(
+        """Build timeline from raw ingested data.
+
+        For Race/Sprint sessions, trims pre-race data by starting the timeline
+        from the formation lap (SESSION STARTED minus offset). This avoids
+        loading ~1h of reconnaissance/grid data that has no animation value.
+        """
+        # Determine effective start (formation lap for races, None for others)
+        effective_start: datetime | None = None
+        if session is not None:
+            effective_start = await self._get_effective_start(session)
+
+        # Fetch raw positions — filtered by effective_start if set
+        pos_query = (
             select(CarPosition)
             .where(CarPosition.session_id == session_id)
             .order_by(CarPosition.timestamp)
         )
+        if effective_start is not None:
+            pos_query = pos_query.where(CarPosition.timestamp >= effective_start)
+
+        pos_result = await self._db.execute(pos_query)
         raw_positions_rows = pos_result.scalars().all()
         if not raw_positions_rows:
             raise InsufficientDataError("No car position data found for this session")
@@ -436,12 +508,16 @@ class TimelineService:
             for r in raw_positions_rows
         ]
 
-        # Fetch telemetry (speed)
-        tel_result = await self._db.execute(
+        # Fetch telemetry (speed) — filtered
+        tel_query = (
             select(CarTelemetry)
             .where(CarTelemetry.session_id == session_id)
             .order_by(CarTelemetry.timestamp)
         )
+        if effective_start is not None:
+            tel_query = tel_query.where(CarTelemetry.timestamp >= effective_start)
+
+        tel_result = await self._db.execute(tel_query)
         raw_telemetry = [
             {
                 "driver_number": r.driver_number,
@@ -451,12 +527,16 @@ class TimelineService:
             for r in tel_result.scalars().all()
         ]
 
-        # Fetch race positions
-        rp_result = await self._db.execute(
+        # Fetch race positions — filtered
+        rp_query = (
             select(Position)
             .where(Position.session_id == session_id)
             .order_by(Position.timestamp)
         )
+        if effective_start is not None:
+            rp_query = rp_query.where(Position.timestamp >= effective_start)
+
+        rp_result = await self._db.execute(rp_query)
         raw_positions_data = [
             {
                 "driver_number": r.driver_number,
@@ -466,7 +546,7 @@ class TimelineService:
             for r in rp_result.scalars().all()
         ]
 
-        # Fetch laps
+        # Fetch laps (all — needed for forward-fill context)
         laps_result = await self._db.execute(
             select(Lap)
             .where(Lap.session_id == session_id)

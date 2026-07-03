@@ -58,6 +58,7 @@ async def get_timeline_meta(
             )
             for d in meta["drivers"]
         ],
+        race_start_elapsed_seconds=meta.get("race_start_elapsed_seconds"),
     )
 
 
@@ -189,6 +190,7 @@ async def get_car_timeline_compact(
         positions={
             k: DriverPositionsSchema(**v) for k, v in chunk_data["positions"].items()
         },
+        race_start_elapsed_seconds=chunk_data.get("race_start_elapsed_seconds"),
     )
 
 
