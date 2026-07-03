@@ -11,6 +11,7 @@ from trackpulse_api.routes.health import router as health_router
 from trackpulse_api.routes.ingest import router as ingest_router
 from trackpulse_api.routes.sessions import router as sessions_router
 from trackpulse_api.routes.timeline import router as timeline_router
+from trackpulse_api.routes.timeline_ws import router as timeline_ws_router
 
 
 @asynccontextmanager
@@ -47,6 +48,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(circuit_router)
     app.include_router(ingest_router)
     app.include_router(timeline_router)
+    app.include_router(timeline_ws_router)
 
     return app
 

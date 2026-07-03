@@ -147,3 +147,99 @@ async def test_get_car_timeline_default_hz(app):
 
     assert resp.status_code == 200
     mock.get_or_build_car_timeline.assert_called_once_with(9472, 4.0)
+
+
+# --- Timeline Meta endpoint ---
+
+
+def _meta_response(duration=300.0, num_drivers=2, hz=2.0, chunk_seconds=120.0):
+    """Create a mock return value for get_timeline_meta."""
+    return {
+        "session_key": 9472,
+        "total_duration_seconds": duration,
+        "target_hz": hz,
+        "total_chunks": 3,
+        "chunk_seconds": chunk_seconds,
+        "drivers": [
+            {"driver_number": dn, "name_acronym": f"D{dn:02d}", "team_colour": "FFFFFF"}
+            for dn in range(1, num_drivers + 1)
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_timeline_meta_success(app):
+    """GET /timeline/cars/meta returns metadata without position arrays."""
+    meta = _meta_response(duration=300.0, num_drivers=3)
+    mock = AsyncMock(spec=TimelineService)
+    mock.get_timeline_meta.return_value = meta
+    app.dependency_overrides[get_timeline_service] = lambda: mock
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.get("/api/v1/sessions/9472/timeline/cars/meta")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["session_key"] == 9472
+    assert data["total_duration_seconds"] == 300.0
+    assert data["target_hz"] == 2.0
+    assert data["total_chunks"] == 3
+    assert data["chunk_seconds"] == 120.0
+    assert len(data["drivers"]) == 3
+    assert data["drivers"][0]["driver_number"] == 1
+    assert data["drivers"][0]["name_acronym"] == "D01"
+    # Must NOT contain position data
+    assert "elapsed" not in data
+    assert "positions" not in data
+    assert "frames" not in data
+
+
+@pytest.mark.asyncio
+async def test_get_timeline_meta_session_not_found(app):
+    """Returns 404 when session not found."""
+    mock = AsyncMock(spec=TimelineService)
+    mock.get_timeline_meta.side_effect = SessionNotFoundError("Not found")
+    app.dependency_overrides[get_timeline_service] = lambda: mock
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.get("/api/v1/sessions/9999/timeline/cars/meta")
+
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_timeline_meta_no_data(app):
+    """Returns 422 when timeline hasn't been built yet."""
+    mock = AsyncMock(spec=TimelineService)
+    mock.get_timeline_meta.side_effect = InsufficientDataError("No data")
+    app.dependency_overrides[get_timeline_service] = lambda: mock
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.get("/api/v1/sessions/9472/timeline/cars/meta")
+
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_get_timeline_meta_custom_params(app):
+    """Passes hz and chunk_seconds to service."""
+    meta = _meta_response(hz=4.0, chunk_seconds=30.0)
+    mock = AsyncMock(spec=TimelineService)
+    mock.get_timeline_meta.return_value = meta
+    app.dependency_overrides[get_timeline_service] = lambda: mock
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.get(
+            "/api/v1/sessions/9472/timeline/cars/meta?hz=4.0&chunk_seconds=30"
+        )
+
+    assert resp.status_code == 200
+    mock.get_timeline_meta.assert_called_once_with(9472, 4.0, 30.0)

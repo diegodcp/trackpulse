@@ -8,10 +8,11 @@ import {
   type TimelineFrame,
   type CarFrame,
 } from '../types/timeline';
+import type { ChunkConverterResponse } from '../workers/chunkConverter.worker';
 
 const DEFAULT_HZ = 2;
-const DEFAULT_CHUNK_SECONDS = 120;
-const PREFETCH_AHEAD = 1; // prefetch N chunks ahead
+const DEFAULT_CHUNK_SECONDS = 30;
+const PREFETCH_AHEAD = 2; // prefetch N chunks ahead
 
 interface ChunkedTimeline {
   durationSeconds: number;
@@ -87,6 +88,50 @@ export function useCarTimeline(
     totalChunks: number;
     drivers: DriverMeta[];
   } | null>(null);
+  const workerRef = useRef<Worker | null>(null);
+  const pendingConversions = useRef<Map<number, (frames: TimelineFrame[]) => void>>(new Map());
+  const conversionIdRef = useRef(0);
+
+  // Create/destroy chunk converter worker
+  useEffect(() => {
+    if (typeof Worker === 'undefined') return; // No Worker in test environment
+
+    const worker = new Worker(
+      new URL('../workers/chunkConverter.worker.ts', import.meta.url),
+      { type: 'module' },
+    );
+    workerRef.current = worker;
+
+    worker.onmessage = (e: MessageEvent<ChunkConverterResponse>) => {
+      const { id, frames } = e.data;
+      const resolve = pendingConversions.current.get(id);
+      if (resolve) {
+        resolve(frames);
+        pendingConversions.current.delete(id);
+      }
+    };
+
+    return () => {
+      worker.terminate();
+      workerRef.current = null;
+      pendingConversions.current.clear();
+    };
+  }, []);
+
+  // Convert chunk via worker (async) with sync fallback
+  const convertChunk = useCallback((chunk: CompactChunk): Promise<TimelineFrame[]> => {
+    const worker = workerRef.current;
+    if (!worker) {
+      // Fallback: synchronous conversion (e.g. in tests where Worker is unavailable)
+      return Promise.resolve(chunkToFrames(chunk));
+    }
+
+    const id = ++conversionIdRef.current;
+    return new Promise<TimelineFrame[]>((resolve) => {
+      pendingConversions.current.set(id, resolve);
+      worker.postMessage({ type: 'convert', id, chunk });
+    });
+  }, []);
 
   // Fetch first chunk to get metadata
   const { data: firstChunk, isLoading } = useQuery<CompactChunk>({
@@ -109,9 +154,11 @@ export function useCarTimeline(
       totalChunks: firstChunk.total_chunks,
       drivers: firstChunk.drivers,
     };
-    chunksRef.current.set(0, chunkToFrames(firstChunk));
-    setIsReady(true);
-  }, [firstChunk]);
+    convertChunk(firstChunk).then((frames) => {
+      chunksRef.current.set(0, frames);
+      setIsReady(true);
+    });
+  }, [firstChunk, convertChunk]);
 
   // Reset when session changes
   useEffect(() => {
@@ -135,13 +182,14 @@ export function useCarTimeline(
             `/api/v1/sessions/${sessionKey}/timeline/cars/compact?hz=${hz}&chunk=${chunkIndex}&chunk_seconds=${chunkSeconds}`,
           );
           const chunk = compactChunkSchema.parse(data);
-          chunksRef.current.set(chunkIndex, chunkToFrames(chunk));
+          const frames = await convertChunk(chunk);
+          chunksRef.current.set(chunkIndex, frames);
           return chunk;
         },
         staleTime: Infinity,
       });
     },
-    [sessionKey, hz, chunkSeconds, queryClient],
+    [sessionKey, hz, chunkSeconds, queryClient, convertChunk],
   );
 
   const getFramesForTime = useCallback(

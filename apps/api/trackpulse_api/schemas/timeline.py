@@ -56,3 +56,14 @@ class CompactChunkResponse(BaseModel):
     elapsed: list[float]
     positions: dict[str, DriverPositionsSchema]
 
+
+class TimelineMetaResponse(BaseModel):
+    """Lightweight metadata for a car timeline — no position data."""
+
+    session_key: int
+    total_duration_seconds: float
+    target_hz: float
+    total_chunks: int
+    chunk_seconds: float
+    drivers: list[DriverMetaSchema]
+
