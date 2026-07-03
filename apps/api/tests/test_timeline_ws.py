@@ -57,6 +57,9 @@ def _override_service(app, timeline=None, side_effect=None):
         mock.get_or_build_car_timeline.side_effect = side_effect
     else:
         mock.get_or_build_car_timeline.return_value = timeline
+    # Weather not available by default in WS tests
+    mock.get_session_id.return_value = 1
+    mock.get_weather_for_chunk.return_value = None
     app.dependency_overrides[get_timeline_service] = lambda: mock
     return mock
 

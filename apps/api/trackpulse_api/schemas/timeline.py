@@ -12,10 +12,20 @@ class CarFrameSchema(BaseModel):
     team_colour: str
 
 
+class WeatherStateSchema(BaseModel):
+    air_temperature: float
+    track_temperature: float
+    humidity: float
+    wind_speed: float
+    wind_direction: int
+    rainfall: bool
+
+
 class TimelineFrameSchema(BaseModel):
     timestamp: str
     elapsed_seconds: float
     cars: list[CarFrameSchema]
+    weather: WeatherStateSchema | None = None
 
 
 class CarTimelineResponse(BaseModel):
@@ -55,6 +65,7 @@ class CompactChunkResponse(BaseModel):
     drivers: list[DriverMetaSchema]
     elapsed: list[float]
     positions: dict[str, DriverPositionsSchema]
+    weather: list[WeatherStateSchema] | None = None
     race_start_elapsed_seconds: float | None = None
 
 

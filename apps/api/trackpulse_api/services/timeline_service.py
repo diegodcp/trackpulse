@@ -14,10 +14,15 @@ from trackpulse_api.db.models.lap import Lap
 from trackpulse_api.db.models.position import Position
 from trackpulse_api.db.models.race_control_event import RaceControlEvent
 from trackpulse_api.db.models.session import Session
+from trackpulse_api.db.models.weather_sample import WeatherSample
 from trackpulse_api.processing.car_timeline_builder import (
     CarFrame,
     TimelineFrame,
     build_car_timeline,
+)
+from trackpulse_api.processing.weather_timeline_builder import (
+    WeatherState,
+    align_weather_to_timeline,
 )
 from trackpulse_api.services.exceptions import InsufficientDataError, SessionNotFoundError
 
@@ -364,6 +369,12 @@ class TimelineService:
                     positions[str(dn)]["lap"].append(None)
 
         # Use all session drivers (not just seen in this chunk) for driver list
+
+        # Align weather to this chunk's timestamps
+        weather_states = await self.get_weather_for_chunk(
+            session.id, first_ts, elapsed_list
+        )
+
         return {
             "session_key": session_key,
             "total_duration_seconds": round(total_duration, 3),
@@ -376,6 +387,7 @@ class TimelineService:
             "drivers": drivers,
             "elapsed": elapsed_list,
             "positions": positions,
+            "weather": weather_states,
             "race_start_elapsed_seconds": race_start_elapsed,
         }
 
@@ -634,3 +646,52 @@ class TimelineService:
         logger.info(
             "Stored %d car_timeline rows for session_id=%d", len(rows), session_id
         )
+
+    async def get_weather_for_chunk(
+        self,
+        session_id: int,
+        first_ts: datetime,
+        elapsed_list: list[float],
+    ) -> list[WeatherState] | None:
+        """Fetch weather samples and align to a chunk's elapsed grid.
+
+        Returns None if no weather data is available for the session.
+        """
+        result = await self._db.execute(
+            select(WeatherSample)
+            .where(WeatherSample.session_id == session_id)
+            .order_by(WeatherSample.timestamp)
+        )
+        rows = result.scalars().all()
+        if not rows:
+            return None
+
+        weather_samples = [
+            {
+                "timestamp": r.timestamp,
+                "air_temperature": r.air_temperature or 0.0,
+                "track_temperature": r.track_temperature or 0.0,
+                "humidity": r.humidity or 0.0,
+                "wind_speed": r.wind_speed or 0.0,
+                "wind_direction": r.wind_direction or 0,
+                "rainfall": r.rainfall or False,
+            }
+            for r in rows
+        ]
+
+        # Convert elapsed seconds to absolute timestamps for alignment
+        grid_timestamps = [
+            first_ts + timedelta(seconds=e) for e in elapsed_list
+        ]
+
+        return align_weather_to_timeline(weather_samples, grid_timestamps)
+
+    async def get_session_id(self, session_key: int) -> int:
+        """Resolve a public session_key to an internal session id."""
+        result = await self._db.execute(
+            select(Session.id).where(Session.session_key == session_key)
+        )
+        session_id = result.scalar_one_or_none()
+        if session_id is None:
+            raise SessionNotFoundError(f"Session with key {session_key} not found")
+        return session_id

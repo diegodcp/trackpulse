@@ -8,10 +8,13 @@ import asyncio
 import bisect
 import logging
 
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
 from trackpulse_api.dependencies import get_timeline_service
 from trackpulse_api.processing.car_timeline_builder import TimelineFrame
+from trackpulse_api.processing.weather_timeline_builder import WeatherState
 from trackpulse_api.services.exceptions import InsufficientDataError, SessionNotFoundError
 from trackpulse_api.services.timeline_service import TimelineService
 
@@ -180,6 +183,15 @@ async def stream_car_timeline(
     # Pre-build elapsed index for fast binary search
     elapsed_index = [f.elapsed_seconds for f in timeline]
 
+    # Pre-load weather timeline aligned to car frames (None if no weather data)
+    first_ts = datetime.fromisoformat(timeline[0].timestamp)
+    session_id = await service.get_session_id(session_key)
+    weather_timeline = await service.get_weather_for_chunk(
+        session_id=session_id,
+        first_ts=first_ts,
+        elapsed_list=elapsed_index,
+    )
+
     # Clamp start_elapsed
     current_elapsed = max(0.0, min(start_elapsed, total_duration))
     paused = False
@@ -216,11 +228,27 @@ async def stream_car_timeline(
 
             # Extract and send current frame
             cars = _extract_frame_at(timeline, elapsed_index, current_elapsed)
-            await websocket.send_json({
+            frame_msg: dict = {
                 "type": "frame",
                 "elapsed": round(current_elapsed, 3),
                 "cars": cars,
-            })
+            }
+
+            # Include weather state for this point in time
+            if weather_timeline:
+                widx = bisect.bisect_right(elapsed_index, current_elapsed)
+                widx = max(0, min(widx, len(weather_timeline) - 1))
+                w = weather_timeline[widx]
+                frame_msg["weather"] = {
+                    "air_temperature": w.air_temperature,
+                    "track_temperature": w.track_temperature,
+                    "humidity": w.humidity,
+                    "wind_speed": w.wind_speed,
+                    "wind_direction": w.wind_direction,
+                    "rainfall": w.rainfall,
+                }
+
+            await websocket.send_json(frame_msg)
 
             # Advance by 1/hz seconds of race time
             current_elapsed += step

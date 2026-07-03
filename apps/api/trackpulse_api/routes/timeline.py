@@ -12,6 +12,7 @@ from trackpulse_api.schemas.timeline import (
     DriverPositionsSchema,
     TimelineFrameSchema,
     TimelineMetaResponse,
+    WeatherStateSchema,
 )
 from trackpulse_api.services.exceptions import InsufficientDataError, SessionNotFoundError
 from trackpulse_api.services.timeline_service import TimelineService
@@ -190,6 +191,17 @@ async def get_car_timeline_compact(
         positions={
             k: DriverPositionsSchema(**v) for k, v in chunk_data["positions"].items()
         },
+        weather=[
+            WeatherStateSchema(
+                air_temperature=w.air_temperature,
+                track_temperature=w.track_temperature,
+                humidity=w.humidity,
+                wind_speed=w.wind_speed,
+                wind_direction=w.wind_direction,
+                rainfall=w.rainfall,
+            )
+            for w in chunk_data["weather"]
+        ] if chunk_data.get("weather") else None,
         race_start_elapsed_seconds=chunk_data.get("race_start_elapsed_seconds"),
     )
 
