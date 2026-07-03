@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
-import type { InterpolatedCar, MainToWorkerMessage, WorkerToMainMessage } from '../workers/types';
+import type { InterpolatedCar, MainToWorkerMessage, StreamWeather, WorkerToMainMessage } from '../workers/types';
 
 export interface UseStreamingTimelineOptions {
   sessionKey: number | null;
@@ -13,6 +13,8 @@ export interface StreamingTimeline {
   currentElapsed: React.RefObject<number>;
   /** Latest interpolated car positions (updated by worker, read by ticker) */
   carsRef: React.RefObject<InterpolatedCar[]>;
+  /** Latest weather state (updated by worker) */
+  weatherRef: React.RefObject<StreamWeather | null>;
   /** Control methods */
   seek: (elapsed: number) => void;
   setSpeed: (speed: number) => void;
@@ -33,6 +35,7 @@ export function useStreamingTimeline({
   const workerRef = useRef<Worker | null>(null);
   const currentElapsed = useRef(0);
   const carsRef = useRef<InterpolatedCar[]>([]);
+  const weatherRef = useRef<StreamWeather | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isEnded, setIsEnded] = useState(false);
 
@@ -52,6 +55,7 @@ export function useStreamingTimeline({
         case 'tick':
           currentElapsed.current = msg.elapsed;
           carsRef.current = msg.cars;
+          weatherRef.current = msg.weather ?? null;
           break;
         case 'connected':
           setIsConnected(true);
@@ -115,6 +119,7 @@ export function useStreamingTimeline({
   return {
     currentElapsed,
     carsRef,
+    weatherRef,
     seek,
     setSpeed,
     pause,

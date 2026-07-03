@@ -1,5 +1,5 @@
 import { Application } from 'pixi.js';
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { useCircuitGeometry } from '../hooks/useCircuitGeometry';
 import { useCarTimeline } from '../hooks/useCarTimeline';
 import { usePlayback } from '../hooks/usePlayback';
@@ -9,9 +9,11 @@ import { computeTransform, worldToScreen, type Transform } from '../utils/coordi
 import { drawTrack } from './TrackLayer';
 import { drawStartFinish } from './StartFinishMarker';
 import { PlaybackControlsBar } from './PlaybackControls';
+import { WeatherSection } from './WeatherSection';
 import { CarMarkerSprite } from './CarMarker';
 import { interpolateFrames, findFrameAtTime } from '../utils/interpolation';
 import type { CircuitGeometry } from '../types/circuit';
+import type { WeatherState } from '../types/timeline';
 import type { InterpolatedCar } from '../workers/types';
 
 const USE_STREAMING = import.meta.env.VITE_USE_STREAMING === 'true';
@@ -37,6 +39,10 @@ export function CircuitCanvas() {
 
   // Playback controls — ticker-driven, no per-frame React state
   const playback = usePlayback(timeline);
+
+  // Weather state — throttled updates from the ticker (avoids per-frame re-renders)
+  const [currentWeather, setCurrentWeather] = useState<WeatherState | null>(null);
+  const lastWeatherUpdateRef = useRef(0);
 
   // Build driver metadata map from timeline for marker creation
   useEffect(() => {
@@ -105,6 +111,11 @@ export function CircuitCanvas() {
     if (!app || !geo) return;
     const transform = renderCircuit(app, geo);
     transformRef.current = transform;
+
+    // Re-add car markers to stage (renderCircuit removes all children)
+    for (const marker of markersRef.current.values()) {
+      app.stage.addChild(marker.container);
+    }
   }
 
   useEffect(() => {
@@ -216,6 +227,25 @@ export function CircuitCanvas() {
         const nextIndex = Math.min(frameIndex + 1, frames.length - 1);
         const interpolated = interpolateFrames(frames[frameIndex], frames[nextIndex], t);
         cars = interpolated;
+
+        // Throttled weather update from chunk frame (every 250ms)
+        const now = performance.now();
+        if (now - lastWeatherUpdateRef.current > 250) {
+          const frameWeather = frames[frameIndex].weather;
+          if (frameWeather !== undefined) {
+            setCurrentWeather(frameWeather ?? null);
+          }
+          lastWeatherUpdateRef.current = now;
+        }
+      }
+
+      // Throttled weather update from streaming ref
+      if (USE_STREAMING) {
+        const now = performance.now();
+        if (now - lastWeatherUpdateRef.current > 250) {
+          setCurrentWeather(streaming.weatherRef.current);
+          lastWeatherUpdateRef.current = now;
+        }
       }
 
       if (!cars || cars.length === 0) return;
@@ -279,6 +309,7 @@ export function CircuitCanvas() {
 
   return (
     <div className="circuit-canvas-wrapper">
+      <WeatherSection weather={currentWeather} />
       <div ref={canvasRef} className="circuit-canvas">
         {isLoading && <div className="circuit-loading">Loading circuit...</div>}
         {error && <div className="circuit-error">Failed to load circuit</div>}

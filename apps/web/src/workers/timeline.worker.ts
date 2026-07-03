@@ -94,7 +94,7 @@ function connectWebSocket(sessionKey: number, hz: number, speed: number): void {
 
       // Interpolate at current elapsed and send to main thread
       const cars = frameToCarArray(frame);
-      self.postMessage({ type: 'tick', elapsed: frame.elapsed, cars });
+      self.postMessage({ type: 'tick', elapsed: frame.elapsed, cars, weather: frame.weather });
     } else if (msg.type === 'end') {
       self.postMessage({ type: 'end' });
     } else if (msg.type === 'error') {

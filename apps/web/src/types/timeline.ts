@@ -15,6 +15,17 @@ export const timelineFrameSchema = z.object({
   timestamp: z.string(),
   elapsed_seconds: z.number(),
   cars: z.array(carFrameSchema),
+  weather: z
+    .object({
+      air_temperature: z.number(),
+      track_temperature: z.number(),
+      humidity: z.number(),
+      wind_speed: z.number(),
+      wind_direction: z.number(),
+      rainfall: z.boolean(),
+    })
+    .nullable()
+    .optional(),
 });
 
 export const carTimelineSchema = z.object({
@@ -57,9 +68,33 @@ export const compactChunkSchema = z.object({
   drivers: z.array(driverMetaSchema),
   elapsed: z.array(z.number()),
   positions: z.record(z.string(), driverPositionsSchema),
+  weather: z
+    .array(
+      z.object({
+        air_temperature: z.number(),
+        track_temperature: z.number(),
+        humidity: z.number(),
+        wind_speed: z.number(),
+        wind_direction: z.number(),
+        rainfall: z.boolean(),
+      }),
+    )
+    .nullable()
+    .optional(),
   race_start_elapsed_seconds: z.number().nullable().optional(),
 });
 
 export type DriverMeta = z.infer<typeof driverMetaSchema>;
 export type DriverPositions = z.infer<typeof driverPositionsSchema>;
 export type CompactChunk = z.infer<typeof compactChunkSchema>;
+
+// --- Weather state ---
+
+export interface WeatherState {
+  air_temperature: number;
+  track_temperature: number;
+  humidity: number;
+  wind_speed: number;
+  wind_direction: number;
+  rainfall: boolean;
+}

@@ -19,6 +19,15 @@ interface DriverPositions {
   lap: (number | null)[];
 }
 
+interface WeatherState {
+  air_temperature: number;
+  track_temperature: number;
+  humidity: number;
+  wind_speed: number;
+  wind_direction: number;
+  rainfall: boolean;
+}
+
 interface CompactChunk {
   session_key: number;
   total_duration_seconds: number;
@@ -31,6 +40,7 @@ interface CompactChunk {
   drivers: DriverMeta[];
   elapsed: number[];
   positions: Record<string, DriverPositions>;
+  weather?: WeatherState[] | null;
 }
 
 interface CarFrame {
@@ -48,6 +58,7 @@ interface TimelineFrame {
   timestamp: string;
   elapsed_seconds: number;
   cars: CarFrame[];
+  weather?: WeatherState | null;
 }
 
 export type ChunkConverterRequest = {
@@ -67,7 +78,7 @@ export type ChunkConverterResponse = {
  */
 function chunkToFrames(chunk: CompactChunk): TimelineFrame[] {
   const frames: TimelineFrame[] = [];
-  const { drivers, elapsed, positions } = chunk;
+  const { drivers, elapsed, positions, weather } = chunk;
 
   for (let i = 0; i < elapsed.length; i++) {
     const cars: CarFrame[] = [];
@@ -94,6 +105,7 @@ function chunkToFrames(chunk: CompactChunk): TimelineFrame[] {
       timestamp: '',
       elapsed_seconds: elapsed[i],
       cars,
+      weather: weather?.[i] ?? null,
     });
   }
 

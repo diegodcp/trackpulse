@@ -215,3 +215,57 @@ body,
   font-weight: 600;
   white-space: nowrap;
 }
+
+/* Weather Section */
+.weather-section {
+  display: flex;
+  gap: 1rem;
+  padding: 8px 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.weather-section--empty {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.weather-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.weather-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  letter-spacing: 0.5px;
+}
+
+.weather-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.weather-item--rain {
+  color: #4fc3f7;
+}
+
+.wind-arrow {
+  margin-left: 4px;
+  font-size: 1rem;
+}
+
+@media (max-width: 600px) {
+  .weather-section {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}

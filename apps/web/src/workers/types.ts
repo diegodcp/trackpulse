@@ -11,11 +11,22 @@ export interface CompactCar {
   l: number | null; // lap_number
 }
 
+/** Weather state included in each WebSocket frame. */
+export interface StreamWeather {
+  air_temperature: number;
+  track_temperature: number;
+  humidity: number;
+  wind_speed: number;
+  wind_direction: number;
+  rainfall: boolean;
+}
+
 /** A single frame received from the WebSocket stream. */
 export interface StreamFrame {
   type: 'frame';
   elapsed: number;
   cars: Record<string, CompactCar>;
+  weather?: StreamWeather;
 }
 
 /** Interpolated car position ready for rendering. */
@@ -42,7 +53,7 @@ export type MainToWorkerMessage =
 // --- Messages from Worker → Main Thread ---
 
 export type WorkerToMainMessage =
-  | { type: 'tick'; elapsed: number; cars: InterpolatedCar[] }
+  | { type: 'tick'; elapsed: number; cars: InterpolatedCar[]; weather?: StreamWeather }
   | { type: 'end' }
   | { type: 'connected' }
   | { type: 'disconnected' }

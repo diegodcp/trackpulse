@@ -7,6 +7,7 @@ import {
   type DriverMeta,
   type TimelineFrame,
   type CarFrame,
+  type WeatherState,
 } from '../types/timeline';
 import type { ChunkConverterResponse } from '../workers/chunkConverter.worker';
 
@@ -34,7 +35,7 @@ interface ChunkedTimeline {
  */
 function chunkToFrames(chunk: CompactChunk): TimelineFrame[] {
   const frames: TimelineFrame[] = [];
-  const { drivers, elapsed, positions } = chunk;
+  const { drivers, elapsed, positions, weather } = chunk;
 
   for (let i = 0; i < elapsed.length; i++) {
     const cars: CarFrame[] = [];
@@ -62,6 +63,7 @@ function chunkToFrames(chunk: CompactChunk): TimelineFrame[] {
       timestamp: '',
       elapsed_seconds: elapsed[i],
       cars,
+      weather: weather?.[i] ?? null,
     });
   }
 
