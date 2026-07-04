@@ -1,5 +1,5 @@
 import { Application } from 'pixi.js';
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { useCircuitGeometry } from '../hooks/useCircuitGeometry';
 import { useCarTimeline } from '../hooks/useCarTimeline';
 import { usePlayback } from '../hooks/usePlayback';
@@ -8,12 +8,16 @@ import { useAppContext } from '../context/AppContext';
 import { computeTransform, worldToScreen, type Transform } from '../utils/coordinates';
 import { drawTrack } from './TrackLayer';
 import { drawStartFinish } from './StartFinishMarker';
+import { drawWindIcons } from './WindOverlay';
 import { PlaybackControlsBar } from './PlaybackControls';
 import { WeatherSection } from './WeatherSection';
+import { LayerToggle, type Layer, windIcon } from './LayerToggle';
 import { CarMarkerSprite } from './CarMarker';
 import { interpolateFrames, findFrameAtTime } from '../utils/interpolation';
 import type { CircuitGeometry } from '../types/circuit';
 import type { WeatherState } from '../types/timeline';
+import type { SegmentWind } from '../utils/windUtils';
+import { deriveSegmentWind } from '../utils/windUtils';
 import type { InterpolatedCar } from '../workers/types';
 
 const USE_STREAMING = import.meta.env.VITE_USE_STREAMING === 'true';
@@ -43,6 +47,20 @@ export function CircuitCanvas() {
   // Weather state — throttled updates from the ticker (avoids per-frame re-renders)
   const [currentWeather, setCurrentWeather] = useState<WeatherState | null>(null);
   const lastWeatherUpdateRef = useRef(0);
+
+  // Wind overlay state
+  const [layers, setLayers] = useState<Layer[]>([
+    { id: 'wind', label: 'Wind', active: true, icon: windIcon },
+  ]);
+  const windContainerRef = useRef<import('pixi.js').Container | null>(null);
+  const [currentSegmentWind, setCurrentSegmentWind] = useState<SegmentWind[] | null>(null);
+  const lastWindUpdateRef = useRef(0);
+
+  const handleLayerToggle = useCallback((layerId: string) => {
+    setLayers((prev) =>
+      prev.map((l) => (l.id === layerId ? { ...l, active: !l.active } : l)),
+    );
+  }, []);
 
   // Build driver metadata map from timeline for marker creation
   useEffect(() => {
@@ -142,6 +160,7 @@ export function CircuitCanvas() {
       }
 
       app = instance;
+      app.stage.eventMode = 'static';
       container.appendChild(instance.canvas);
       appRef.current = instance;
       redraw();
@@ -237,6 +256,15 @@ export function CircuitCanvas() {
           }
           lastWeatherUpdateRef.current = now;
         }
+
+        // Throttled wind overlay update (every 1000ms — wind changes slowly)
+        if (now - lastWindUpdateRef.current > 1000) {
+          const frameWind = frames[frameIndex].segment_wind;
+          if (frameWind !== undefined) {
+            setCurrentSegmentWind(frameWind ?? null);
+          }
+          lastWindUpdateRef.current = now;
+        }
       }
 
       // Throttled weather update from streaming ref
@@ -245,6 +273,11 @@ export function CircuitCanvas() {
         if (now - lastWeatherUpdateRef.current > 250) {
           setCurrentWeather(streaming.weatherRef.current);
           lastWeatherUpdateRef.current = now;
+        }
+        // Throttled wind update from streaming ref (every 1000ms)
+        if (now - lastWindUpdateRef.current > 1000) {
+          setCurrentSegmentWind(streaming.segmentWindRef.current);
+          lastWindUpdateRef.current = now;
         }
       }
 
@@ -307,12 +340,45 @@ export function CircuitCanvas() {
     markersRef.current.clear();
   }, [selectedSessionKey]);
 
+  // Wind overlay rendering — update when segment wind data or layer visibility changes
+  useEffect(() => {
+    const app = appRef.current;
+    const geo = geometryRef.current;
+    const transform = transformRef.current;
+    if (!app || !geo || !transform) return;
+
+    const windLayer = layers.find((l) => l.id === 'wind');
+    const isVisible = windLayer?.active ?? false;
+
+    // Remove existing wind container
+    if (windContainerRef.current) {
+      app.stage.removeChild(windContainerRef.current);
+      windContainerRef.current.destroy({ children: true });
+      windContainerRef.current = null;
+    }
+
+    if (!isVisible || !currentWeather) return;
+
+    // Use backend segment_wind if available, otherwise derive client-side
+    const segmentWind =
+      currentSegmentWind && currentSegmentWind.length > 0
+        ? currentSegmentWind
+        : deriveSegmentWind(currentWeather.wind_speed, currentWeather.wind_direction, geo);
+
+    if (segmentWind.length === 0) return;
+
+    const container = drawWindIcons(geo, segmentWind, currentWeather.wind_direction, transform);
+    app.stage.addChild(container);
+    windContainerRef.current = container;
+  }, [layers, currentSegmentWind, currentWeather, geometry]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="circuit-canvas-wrapper">
       <WeatherSection weather={currentWeather} />
-      <div ref={canvasRef} className="circuit-canvas">
+      <div ref={canvasRef} className="circuit-canvas" style={{ position: 'relative' }}>
         {isLoading && <div className="circuit-loading">Loading circuit...</div>}
         {error && <div className="circuit-error">Failed to load circuit</div>}
+        <LayerToggle layers={layers} onToggle={handleLayerToggle} />
       </div>
       <PlaybackControlsBar
         playback={playback}

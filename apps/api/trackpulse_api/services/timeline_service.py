@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from trackpulse_api.db.models.car_position import CarPosition
 from trackpulse_api.db.models.car_telemetry import CarTelemetry
 from trackpulse_api.db.models.car_timeline import CarTimeline
+from trackpulse_api.db.models.circuit_geometry import CircuitGeometry as CircuitGeometryModel
 from trackpulse_api.db.models.driver import Driver
 from trackpulse_api.db.models.lap import Lap
 from trackpulse_api.db.models.position import Position
@@ -23,6 +24,10 @@ from trackpulse_api.processing.car_timeline_builder import (
 from trackpulse_api.processing.weather_timeline_builder import (
     WeatherState,
     align_weather_to_timeline,
+)
+from trackpulse_api.processing.wind_derivation import (
+    SegmentWind,
+    derive_segment_wind,
 )
 from trackpulse_api.services.exceptions import InsufficientDataError, SessionNotFoundError
 
@@ -375,6 +380,13 @@ class TimelineService:
             session.id, first_ts, elapsed_list
         )
 
+        # Derive per-segment wind from weather + circuit geometry
+        segment_wind_frames = None
+        if weather_states:
+            segment_wind_frames = await self.get_segment_wind_for_chunk(
+                session.id, weather_states
+            )
+
         return {
             "session_key": session_key,
             "total_duration_seconds": round(total_duration, 3),
@@ -388,6 +400,7 @@ class TimelineService:
             "elapsed": elapsed_list,
             "positions": positions,
             "weather": weather_states,
+            "segment_wind": segment_wind_frames,
             "race_start_elapsed_seconds": race_start_elapsed,
         }
 
@@ -695,3 +708,39 @@ class TimelineService:
         if session_id is None:
             raise SessionNotFoundError(f"Session with key {session_key} not found")
         return session_id
+
+    async def get_segment_wind_for_chunk(
+        self,
+        session_id: int,
+        weather_states: list[WeatherState],
+    ) -> list[list[SegmentWind]] | None:
+        """Derive per-segment wind for each frame from weather + circuit geometry.
+
+        Returns None if no circuit geometry is available for the session.
+        Each inner list has one SegmentWind per circuit segment.
+        """
+        # Fetch circuit geometry from DB
+        result = await self._db.execute(
+            select(CircuitGeometryModel).where(
+                CircuitGeometryModel.session_id == session_id
+            )
+        )
+        geo_row = result.scalar_one_or_none()
+        if not geo_row:
+            return None
+
+        circuit_points = geo_row.centerline  # list of {x, y, cumulative_dist}
+        segments = geo_row.segments  # list of {id, start_idx, end_idx, ...}
+
+        # Derive wind for each weather frame (pure function, no I/O)
+        segment_wind_frames: list[list[SegmentWind]] = []
+        for weather in weather_states:
+            frame_wind = derive_segment_wind(
+                wind_speed=weather.wind_speed,
+                wind_direction=weather.wind_direction,
+                circuit_points=circuit_points,
+                segments=segments,
+            )
+            segment_wind_frames.append(frame_wind)
+
+        return segment_wind_frames

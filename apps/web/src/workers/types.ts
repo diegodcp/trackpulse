@@ -21,12 +21,22 @@ export interface StreamWeather {
   rainfall: boolean;
 }
 
+/** Per-segment wind data included in WebSocket frames. */
+export interface StreamSegmentWind {
+  segment_id: number;
+  wind_class: 'headwind' | 'tailwind' | 'crosswind_left' | 'crosswind_right';
+  effective_speed: number;
+  headwind_component: number;
+  crosswind_component: number;
+}
+
 /** A single frame received from the WebSocket stream. */
 export interface StreamFrame {
   type: 'frame';
   elapsed: number;
   cars: Record<string, CompactCar>;
   weather?: StreamWeather;
+  segment_wind?: StreamSegmentWind[];
 }
 
 /** Interpolated car position ready for rendering. */
@@ -53,7 +63,7 @@ export type MainToWorkerMessage =
 // --- Messages from Worker → Main Thread ---
 
 export type WorkerToMainMessage =
-  | { type: 'tick'; elapsed: number; cars: InterpolatedCar[]; weather?: StreamWeather }
+  | { type: 'tick'; elapsed: number; cars: InterpolatedCar[]; weather?: StreamWeather; segment_wind?: StreamSegmentWind[] }
   | { type: 'end' }
   | { type: 'connected' }
   | { type: 'disconnected' }

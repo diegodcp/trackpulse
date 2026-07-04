@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
-import type { InterpolatedCar, MainToWorkerMessage, StreamWeather, WorkerToMainMessage } from '../workers/types';
+import type { InterpolatedCar, MainToWorkerMessage, StreamSegmentWind, StreamWeather, WorkerToMainMessage } from '../workers/types';
 
 export interface UseStreamingTimelineOptions {
   sessionKey: number | null;
@@ -15,6 +15,8 @@ export interface StreamingTimeline {
   carsRef: React.RefObject<InterpolatedCar[]>;
   /** Latest weather state (updated by worker) */
   weatherRef: React.RefObject<StreamWeather | null>;
+  /** Latest per-segment wind data (updated by worker) */
+  segmentWindRef: React.RefObject<StreamSegmentWind[] | null>;
   /** Control methods */
   seek: (elapsed: number) => void;
   setSpeed: (speed: number) => void;
@@ -36,6 +38,7 @@ export function useStreamingTimeline({
   const currentElapsed = useRef(0);
   const carsRef = useRef<InterpolatedCar[]>([]);
   const weatherRef = useRef<StreamWeather | null>(null);
+  const segmentWindRef = useRef<StreamSegmentWind[] | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isEnded, setIsEnded] = useState(false);
 
@@ -56,6 +59,7 @@ export function useStreamingTimeline({
           currentElapsed.current = msg.elapsed;
           carsRef.current = msg.cars;
           weatherRef.current = msg.weather ?? null;
+          segmentWindRef.current = msg.segment_wind ?? null;
           break;
         case 'connected':
           setIsConnected(true);
@@ -120,6 +124,7 @@ export function useStreamingTimeline({
     currentElapsed,
     carsRef,
     weatherRef,
+    segmentWindRef,
     seek,
     setSpeed,
     pause,

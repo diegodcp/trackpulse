@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 517 369" width="517" height="369" role="img" aria-label="Wind lines icon">
+  <g fill="none" stroke="#000000" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M64 131H207C234 131 256 109 256 82C256 54 233 31 205 31C177 31 155 54 155 82"/>
+    <path d="M298 114C298 77 328 47 365 47C402 47 432 78 432 115C432 152 402 181 365 181H64"/>
+    <path d="M64 231H350C378 231 398 253 398 281C398 310 375 331 347 331C320 331 298 309 298 281"/>
+  </g>
+</svg>

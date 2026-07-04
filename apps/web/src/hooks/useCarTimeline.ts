@@ -35,7 +35,7 @@ interface ChunkedTimeline {
  */
 function chunkToFrames(chunk: CompactChunk): TimelineFrame[] {
   const frames: TimelineFrame[] = [];
-  const { drivers, elapsed, positions, weather } = chunk;
+  const { drivers, elapsed, positions, weather, segment_wind } = chunk;
 
   for (let i = 0; i < elapsed.length; i++) {
     const cars: CarFrame[] = [];
@@ -64,6 +64,7 @@ function chunkToFrames(chunk: CompactChunk): TimelineFrame[] {
       elapsed_seconds: elapsed[i],
       cars,
       weather: weather?.[i] ?? null,
+      segment_wind: segment_wind?.[i] ?? null,
     });
   }
 

@@ -53,6 +53,16 @@ class DriverPositionsSchema(BaseModel):
     lap: list[int | None]
 
 
+class SegmentWindSchema(BaseModel):
+    """Per-segment wind characteristics derived from global wind + track heading."""
+
+    segment_id: int
+    wind_class: str  # headwind / tailwind / crosswind_left / crosswind_right
+    effective_speed: float  # Dominant wind component magnitude (m/s)
+    headwind_component: float  # Positive = opposing car, negative = assisting
+    crosswind_component: float  # Positive = from right, negative = from left
+
+
 class CompactChunkResponse(BaseModel):
     session_key: int
     total_duration_seconds: float
@@ -66,6 +76,7 @@ class CompactChunkResponse(BaseModel):
     elapsed: list[float]
     positions: dict[str, DriverPositionsSchema]
     weather: list[WeatherStateSchema] | None = None
+    segment_wind: list[list[SegmentWindSchema]] | None = None
     race_start_elapsed_seconds: float | None = None
 
 

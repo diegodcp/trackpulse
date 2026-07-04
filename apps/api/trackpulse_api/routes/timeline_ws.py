@@ -192,6 +192,13 @@ async def stream_car_timeline(
         elapsed_list=elapsed_index,
     )
 
+    # Pre-compute per-segment wind for all frames (None if no geometry or weather)
+    segment_wind_timeline = None
+    if weather_timeline:
+        segment_wind_timeline = await service.get_segment_wind_for_chunk(
+            session_id, weather_timeline
+        )
+
     # Clamp start_elapsed
     current_elapsed = max(0.0, min(start_elapsed, total_duration))
     paused = False
@@ -247,6 +254,19 @@ async def stream_car_timeline(
                     "wind_direction": w.wind_direction,
                     "rainfall": w.rainfall,
                 }
+
+                # Include per-segment wind derivation
+                if segment_wind_timeline:
+                    frame_msg["segment_wind"] = [
+                        {
+                            "segment_id": sw.segment_id,
+                            "wind_class": sw.wind_class.value,
+                            "effective_speed": sw.effective_speed,
+                            "headwind_component": sw.headwind_component,
+                            "crosswind_component": sw.crosswind_component,
+                        }
+                        for sw in segment_wind_timeline[widx]
+                    ]
 
             await websocket.send_json(frame_msg)
 

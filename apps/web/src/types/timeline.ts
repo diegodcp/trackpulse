@@ -26,6 +26,18 @@ export const timelineFrameSchema = z.object({
     })
     .nullable()
     .optional(),
+  segment_wind: z
+    .array(
+      z.object({
+        segment_id: z.number(),
+        wind_class: z.enum(['headwind', 'tailwind', 'crosswind_left', 'crosswind_right']),
+        effective_speed: z.number(),
+        headwind_component: z.number(),
+        crosswind_component: z.number(),
+      }),
+    )
+    .nullable()
+    .optional(),
 });
 
 export const carTimelineSchema = z.object({
@@ -78,6 +90,20 @@ export const compactChunkSchema = z.object({
         wind_direction: z.number(),
         rainfall: z.boolean(),
       }),
+    )
+    .nullable()
+    .optional(),
+  segment_wind: z
+    .array(
+      z.array(
+        z.object({
+          segment_id: z.number(),
+          wind_class: z.enum(['headwind', 'tailwind', 'crosswind_left', 'crosswind_right']),
+          effective_speed: z.number(),
+          headwind_component: z.number(),
+          crosswind_component: z.number(),
+        }),
+      ),
     )
     .nullable()
     .optional(),

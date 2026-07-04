@@ -1,0 +1,43 @@
+.layer-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  z-index: 10;
+}
+
+.layer-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: #2a2a3e;
+  color: #aaa;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.layer-btn:hover {
+  background: #3a3a5e;
+  color: #ddd;
+}
+
+.layer-btn--active {
+  background: #4a4aff;
+  color: #fff;
+  border-color: #6a6aff;
+}
+
+.layer-btn__icon {
+  width: 16px;
+  height: 16px;
+  filter: brightness(0) invert(0.7);
+}
+
+.layer-btn--active .layer-btn__icon {
+  filter: brightness(0) invert(1);
+}

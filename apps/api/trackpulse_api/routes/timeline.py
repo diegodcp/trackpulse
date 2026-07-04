@@ -10,6 +10,7 @@ from trackpulse_api.schemas.timeline import (
     CompactChunkResponse,
     DriverMetaSchema,
     DriverPositionsSchema,
+    SegmentWindSchema,
     TimelineFrameSchema,
     TimelineMetaResponse,
     WeatherStateSchema,
@@ -202,6 +203,19 @@ async def get_car_timeline_compact(
             )
             for w in chunk_data["weather"]
         ] if chunk_data.get("weather") else None,
+        segment_wind=[
+            [
+                SegmentWindSchema(
+                    segment_id=sw.segment_id,
+                    wind_class=sw.wind_class.value,
+                    effective_speed=sw.effective_speed,
+                    headwind_component=sw.headwind_component,
+                    crosswind_component=sw.crosswind_component,
+                )
+                for sw in frame_winds
+            ]
+            for frame_winds in chunk_data["segment_wind"]
+        ] if chunk_data.get("segment_wind") else None,
         race_start_elapsed_seconds=chunk_data.get("race_start_elapsed_seconds"),
     )
 
